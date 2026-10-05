@@ -24,6 +24,9 @@ export const REASONS = {
   NO_PAGES: {
     message: 'ページがありません。先に PDF を追加してください。',
   },
+  PRINT_FIX_SIZE_UNKNOWN: {
+    message: '仕上がりサイズが分からないページがあるため、入稿用 PDF を作れません。「仕上がりサイズ」を選んでから、もう一度チェックしてください。',
+  },
 } as const satisfies Record<string, { message: string }>;
 
 export type ReasonCode = keyof typeof REASONS;

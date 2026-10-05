@@ -1,7 +1,12 @@
 // 入稿チェック画面。編集中のページを PDF に書き出して解析し、指摘とプレビューを表示する。
-import { buildPdf, SourceCache } from '../core/build.ts';
+// 「入稿用 PDF を作る」(M3)では、塗り足し・トンボを付けた PDF を作り、それをもう一度チェックしてから保存させる。
+import { makeBlankPdf } from '../core/blank.ts';
+import { baseName, buildPdf, SourceCache } from '../core/build.ts';
+import { loadPdfForEditOrThrow } from '../core/pdfLoad.ts';
+import { parsePageRanges } from '../core/ranges.ts';
 import { analyzeForPrint, type PrintAnalysis } from '../print/analyze.ts';
-import type { Binding, Finding, Mark, Severity } from '../print/checks.ts';
+import type { Binding, CheckOptions, Finding, Mark, Severity } from '../print/checks.ts';
+import { blankPagesForSaddle, buildPrintReady, type BleedMethod, type FixResult, type RegionFit } from '../print/fix.ts';
 import { highlightOutOfGamut, simulatePrint } from '../print/gamut.ts';
 import { ptToMm, rectHeight, rectWidth, type Rect } from '../print/geometry.ts';
 import type { PageLayout } from '../print/layout.ts';
@@ -9,6 +14,7 @@ import { PRINT_MESSAGES } from '../print/messages.ts';
 import { findPaperSize, formatSize, PAPER_SIZES } from '../print/paperSizes.ts';
 import { findProfile, PROFILES } from '../print/profiles.ts';
 import { toViewportRect } from '../render/viewport.ts';
+import { downloadBytes } from './download.ts';
 import type { Store } from './store.ts';
 import { $, el, type Ui } from './ui.ts';
 
@@ -21,14 +27,29 @@ const LAYOUT_LABEL: Record<PageLayout['kind'], string> = {
   unknown: 'サイズ不明',
 };
 
+const METHOD_LABEL: Record<BleedMethod | 'existing', string> = {
+  mirror: '端を鏡写しにして伸ばしました',
+  scale: '全体を拡大しました',
+  region: '白いフチを取り除いて引き伸ばしました',
+  none: '塗り足しは付けていません',
+  existing: '元の塗り足しを使いました',
+};
+
 // プレビューの重ね描きの色(凡例と合わせる)
 const COLORS = {
   cut: 'rgba(20, 24, 32, 0.38)',
   trim: '#e0245e',
+  bleed: '#2f6fd6',
   safe: '#1e9e5a',
   text: '#f08c00',
   image: '#7c4dff',
 };
+
+interface FixedState {
+  readonly analysis: PrintAnalysis;
+  readonly result: FixResult;
+  readonly fileName: string;
+}
 
 export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void {
   const form = $<HTMLFormElement>('#check-form');
@@ -43,11 +64,18 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
   const previewPanel = $<HTMLElement>('#check-preview');
   const previewModeNote = $<HTMLElement>('#preview-mode-note');
 
-  let analysis: PrintAnalysis | null = null;
+  /** 編集中のページのチェック結果 */
+  let original: PrintAnalysis | null = null;
+  /** 作った入稿用 PDF とそのチェック結果(作っていなければ null) */
+  let fixed: FixedState | null = null;
+  /** チェックしたときの設定(入稿用 PDF の再チェックに使う) */
+  let checkedOptions: CheckOptions | null = null;
   let stale = false;
   let previewPage = 0;
   let focused: Finding | null = null;
   let renderToken = 0;
+
+  const current = (): PrintAnalysis | null => fixed?.analysis ?? original;
 
   // ---------- 設定 ----------
 
@@ -91,29 +119,42 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
   profileSelect.addEventListener('change', renderProfileNote);
   renderProfileNote();
 
-  // ---------- 実行 ----------
+  // ---------- チェック ----------
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     void runCheck();
   });
 
+  function readOptions(): CheckOptions {
+    const data = new FormData(form);
+    const paperId = String(data.get('paper'));
+    return {
+      profile: findProfile(String(data.get('profile'))),
+      paper: paperId === 'auto' ? 'auto' : (findPaperSize(paperId) ?? 'auto'),
+      binding: (data.get('binding') === 'saddle' ? 'saddle' : 'none') as Binding,
+    };
+  }
+
+  async function discardFixed(): Promise<void> {
+    await fixed?.analysis.renderDoc.loadingTask.destroy();
+    fixed = null;
+  }
+
   async function runCheck(): Promise<void> {
     if (store.pages.length === 0) {
       ui.toastReason('NO_PAGES');
       return;
     }
-    const data = new FormData(form);
-    const profile = findProfile(String(data.get('profile')));
-    const paperId = String(data.get('paper'));
-    const paper = paperId === 'auto' ? 'auto' : (findPaperSize(paperId) ?? 'auto');
-    const binding = (data.get('binding') === 'saddle' ? 'saddle' : 'none') as Binding;
+    const options = readOptions();
     await ui.run('PDF を作成しています…', async (progress) => {
       const bytes = await buildPdf(new SourceCache(store.sourceBytes()), store.pages);
-      const next = await analyzeForPrint(bytes, { profile, paper, binding }, progress);
+      const next = await analyzeForPrint(bytes, options, progress);
       // 前回の結果の描画用文書を破棄する(ワーカー側のメモリを解放するため)
-      await analysis?.renderDoc.loadingTask.destroy();
-      analysis = next;
+      await original?.renderDoc.loadingTask.destroy();
+      await discardFixed();
+      original = next;
+      checkedOptions = options;
       stale = false;
       focused = null;
       const firstProblem = next.report.findings.find((f) => f.severity !== 'info' && f.pages.length > 0);
@@ -125,16 +166,189 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
 
   // 編集画面でページが変わったら、結果が古くなったことを示す
   store.subscribe(() => {
-    if (analysis && !stale) {
+    if (original && !stale) {
       stale = true;
       renderResults();
     }
-    if (!analysis) renderResults();
+    if (!original) renderResults();
   });
+
+  // ---------- 入稿用 PDF を作る(M3) ----------
+
+  async function makePrintReady(fixForm: HTMLFormElement): Promise<void> {
+    if (!original || !checkedOptions) return;
+    const source = original;
+    const options = checkedOptions;
+    const data = new FormData(fixForm);
+    const marks = data.get('output') === 'marks';
+    const method = (data.get('method') ?? 'none') as BleedMethod;
+    const regionFit = (data.get('fit') ?? 'cover') as RegionFit;
+    const targetText = String(data.get('target') ?? '').trim();
+    let targetPages: ReadonlySet<number> | 'all' = 'all';
+    if (targetText !== '' && targetText !== 'すべて') {
+      const parsed = parsePageRanges(targetText, source.report.layouts.length);
+      if (!parsed.ok) {
+        ui.toastReason(parsed.code, parsed.detail);
+        return;
+      }
+      targetPages = new Set(parsed.value.flat());
+    }
+    const contentBounds = new Map<number, Rect>();
+    source.facts.forEach((f, i) => f.contentBounds && contentBounds.set(i, f.contentBounds));
+
+    await ui.run('入稿用 PDF を作っています…', async (progress) => {
+      const doc = await loadPdfForEditOrThrow(source.bytes);
+      const result = await buildPrintReady(doc, source.report.layouts, {
+        bleedMm: options.profile.bleedMm,
+        marks,
+        method,
+        targetPages,
+        regionFit,
+        contentBounds,
+      });
+      progress('入稿用 PDF を確認しています…');
+      // TrimBox を書き込んだので、仕上がりサイズは自動判定で正しく読める
+      const analysis = await analyzeForPrint(result.bytes, { ...options, paper: 'auto' }, progress);
+      await discardFixed();
+      const first = store.activeSources()[0];
+      fixed = { analysis, result, fileName: `${first ? baseName(first.name) : 'document'}_入稿用.pdf` };
+      focused = null;
+      previewPage = 0;
+      renderResults();
+      await renderPreview();
+    });
+  }
+
+  async function addBlankPages(count: number): Promise<void> {
+    if (!original || count <= 0) return;
+    const last = original.report.layouts[original.report.layouts.length - 1];
+    const bytes = await makeBlankPdf(count, rectWidth(last.page), rectHeight(last.page));
+    // 裏表紙(最後のページ)の前に入れる
+    store.insertSource('白紙', bytes, count, Math.max(0, store.pages.length - 1));
+    ui.toast(`白紙を ${count} ページ、最後のページの前に入れました。`);
+    await runCheck();
+  }
+
+  function renderFixPanel(analysis: PrintAnalysis): HTMLElement {
+    const panel = el('section', 'fix-panel');
+    panel.id = 'fix-panel';
+    panel.append(el('h3', '', '入稿用 PDF を作る'));
+    panel.append(el('p', 'fix-lead', '塗り足しを付け、仕上がり位置の情報(TrimBox)を書き込んだ PDF を作ります。元のファイルは変わりません。'));
+
+    const layouts = analysis.report.layouts;
+    if (layouts.some((l) => l.kind === 'unknown')) {
+      panel.append(el('p', 'fix-blocked', '仕上がりサイズが分からないページがあるため作れません。左の「仕上がりサイズ」を選んで、もう一度チェックしてください。'));
+      return panel;
+    }
+
+    const f = el('form', 'fix-form');
+    const radio = (name: string, value: string, label: string, hint: string, checked: boolean) => {
+      const row = el('label', 'fix-option');
+      const input = el('input');
+      input.type = 'radio';
+      input.name = name;
+      input.value = value;
+      input.checked = checked;
+      const text = el('span', 'fix-option-text');
+      text.append(el('span', 'fix-option-label', label), el('span', 'fix-option-hint', hint));
+      row.append(input, text);
+      return row;
+    };
+
+    const output = el('fieldset', 'fix-fieldset');
+    output.append(
+      el('legend', '', '形式'),
+      radio('output', 'bleed', '塗り足し込みのサイズ(トンボなし)', '多くの印刷所で使える形式です。', true),
+      radio('output', 'marks', 'トンボ付き(日本式)', 'トンボを付けて入稿するよう指定された場合に。', false),
+    );
+    f.append(output);
+
+    const noBleed = layouts.flatMap((l, i) => (l.bleedMm === 0 ? [i] : []));
+    if (noBleed.length > 0) {
+      const hasEdgeInk = analysis.report.findings.some((x) => x.code === 'PRINT_NO_BLEED');
+      const l = layouts[noBleed[0]];
+      const tw = rectWidth(l.trim);
+      const th = rectHeight(l.trim);
+      const b = (checkedOptions?.profile.bleedMm ?? 3) * (72 / 25.4);
+      const s = Math.max((tw + 2 * b) / tw, (th + 2 * b) / th);
+      const cut = ptToMm(Math.max(((s - 1) * tw) / 2, ((s - 1) * th) / 2));
+
+      const method = el('fieldset', 'fix-fieldset');
+      method.append(
+        el('legend', '', `塗り足しの作り方(塗り足しのない ${noBleed.length} ページ)`),
+        radio('method', 'mirror', '端を鏡写しにして伸ばす', '写真・模様・グラデーションの背景におすすめです。', hasEdgeInk),
+        radio('method', 'scale', '全体を少し拡大する', `端の約 ${cut.toFixed(1)}mm が切れます。端の近くに文字がないときに。`, false),
+        radio('method', 'region', '白いフチを取り除いて引き伸ばす', '余白(白いフチ)付きで作ってしまった表紙をフチなしにします。', false),
+        radio('method', 'none', '塗り足しを付けない', '白いフチを残すデザインのときに。', !hasEdgeInk),
+      );
+      const fit = el('div', 'fix-sub');
+      fit.append(
+        radio('fit', 'cover', '縦横比を保つ', 'はみ出た部分は切れます。', true),
+        radio('fit', 'stretch', '縦横比を変えてぴったり合わせる', '絵柄が少し伸びます。', false),
+      );
+      method.append(fit);
+      const target = el('label', 'fix-target');
+      const input = el('input', 'input-text');
+      input.name = 'target';
+      input.placeholder = 'すべて';
+      input.setAttribute('aria-label', '塗り足しを作るページ');
+      target.append(el('span', '', '対象ページ'), input, el('span', 'fix-option-hint', '表紙だけなら「1」。空欄ならすべて。'));
+      method.append(target);
+      f.append(method);
+
+      const syncFit = () => {
+        fit.hidden = (f.querySelector<HTMLInputElement>('input[name="method"]:checked')?.value ?? '') !== 'region';
+      };
+      f.addEventListener('change', syncFit);
+      syncFit();
+    }
+
+    const submit = el('button', 'btn btn-primary btn-block', '入稿用 PDF を作って確認する');
+    submit.type = 'submit';
+    f.append(submit);
+    f.addEventListener('submit', (e) => {
+      e.preventDefault();
+      void makePrintReady(f);
+    });
+    panel.append(f);
+    return panel;
+  }
+
+  function renderFixedBanner(state: FixedState): HTMLElement {
+    const box = el('section', 'fixed-banner');
+    box.append(el('h3', '', '入稿用 PDF を作りました'));
+    box.append(el('p', '', `下の確認結果とプレビューを見て、問題がなければ保存してください。ファイル名: ${state.fileName}`));
+    const notes = el('ul', 'fixed-notes');
+    for (const p of state.result.pages) {
+      const li = el('li');
+      li.append(`${p.page + 1} ページ目: ${METHOD_LABEL[p.method]}。`, ...p.notes.map((n) => ` ${n}`));
+      notes.append(li);
+    }
+    box.append(notes);
+    const actions = el('div', 'fixed-actions');
+    const save = el('button', 'btn btn-primary', '入稿用 PDF を保存');
+    save.type = 'button';
+    save.addEventListener('click', () => {
+      downloadBytes(state.result.bytes, state.fileName, 'application/pdf');
+      ui.toast(`「${state.fileName}」を保存しました。`);
+    });
+    const back = el('button', 'btn', '元の PDF の結果に戻る');
+    back.type = 'button';
+    back.addEventListener('click', async () => {
+      await discardFixed();
+      previewPage = 0;
+      renderResults();
+      await renderPreview();
+    });
+    actions.append(save, back);
+    box.append(actions);
+    return box;
+  }
 
   // ---------- 結果 ----------
 
   function renderResults(): void {
+    const analysis = current();
     if (store.pages.length === 0 && !analysis) {
       const empty = el('div', 'check-empty');
       empty.append(el('p', '', 'まだページがありません。'));
@@ -160,12 +374,15 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
       banner.setAttribute('role', 'status');
       nodes.push(banner);
     }
+    if (fixed) nodes.push(renderFixedBanner(fixed));
 
     nodes.push(renderSummary(report.layouts, report.findings));
 
     const list = el('ol', 'finding-list');
     for (const f of report.findings) list.append(renderFinding(f));
     if (report.findings.length > 0) nodes.push(list);
+
+    if (!fixed && !stale) nodes.push(renderFixPanel(analysis));
 
     const profile = findProfile(profileSelect.value);
     const manual = el('section', 'check-section');
@@ -194,25 +411,50 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
   function renderSummary(layouts: readonly PageLayout[], findings: readonly Finding[]): HTMLElement {
     const box = el('div', 'check-summary');
     const describe = (l: PageLayout) => {
-      const size = l.paper ? `${l.paper.label}${l.landscape ? '横' : ''}(${formatSize(ptToMm(rectWidth(l.trim)), ptToMm(rectHeight(l.trim)))})` : formatSize(ptToMm(rectWidth(l.page)), ptToMm(rectHeight(l.page)));
+      const size = l.paper
+        ? `${l.paper.label}${l.landscape ? '横' : ''}(${formatSize(ptToMm(rectWidth(l.trim)), ptToMm(rectHeight(l.trim)))})`
+        : formatSize(ptToMm(rectWidth(l.page)), ptToMm(rectHeight(l.page)));
       const bleed = l.bleedMm > 0 ? `・塗り足し 各辺 ${l.bleedMm.toFixed(1)}mm` : '';
       return `${size}・${LAYOUT_LABEL[l.kind]}${bleed}`;
     };
     const kinds = [...new Set(layouts.map(describe))];
-    box.append(el('p', 'summary-layout', kinds.length === 1 ? `${layouts.length} ページ: ${kinds[0]}` : `${layouts.length} ページ(ページによって異なります): ${kinds.join(' / ')}`));
+    box.append(
+      el(
+        'p',
+        'summary-layout',
+        kinds.length === 1 ? `${layouts.length} ページ: ${kinds[0]}` : `${layouts.length} ページ(ページによって異なります): ${kinds.join(' / ')}`,
+      ),
+    );
 
     const counts = { error: 0, warn: 0, info: 0 };
     for (const f of findings) counts[f.severity]++;
     const badges = el('div', 'summary-counts');
-    for (const s of ['error', 'warn', 'info'] as const) {
-      const b = el('span', `count-badge sev-${s}`, `${SEVERITY_LABEL[s]} ${counts[s]}`);
-      badges.append(b);
-    }
+    for (const s of ['error', 'warn', 'info'] as const) badges.append(el('span', `count-badge sev-${s}`, `${SEVERITY_LABEL[s]} ${counts[s]}`));
     box.append(badges);
-    if (counts.error === 0 && counts.warn === 0) {
-      box.append(el('p', 'summary-ok', '大きな問題は見つかりませんでした。'));
-    }
+    if (counts.error === 0 && counts.warn === 0) box.append(el('p', 'summary-ok', '大きな問題は見つかりませんでした。'));
     return box;
+  }
+
+  function findingAction(f: Finding): HTMLButtonElement | null {
+    if (fixed || stale) return null;
+    if (f.code === 'PRINT_NO_BLEED' || f.code === 'PRINT_WHITE_EDGE') {
+      const b = el('button', 'btn finding-action', '塗り足しを作る(下の「入稿用 PDF を作る」へ)');
+      b.type = 'button';
+      b.addEventListener('click', () => {
+        const panel = document.querySelector<HTMLElement>('#fix-panel');
+        panel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        panel?.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true });
+      });
+      return b;
+    }
+    if (f.code === 'PRINT_PAGE_COUNT_SADDLE' && original) {
+      const n = blankPagesForSaddle(original.report.layouts.length);
+      const b = el('button', 'btn finding-action', `白紙を ${n} ページ足す(最後のページの前に)`);
+      b.type = 'button';
+      b.addEventListener('click', () => void addBlankPages(n));
+      return b;
+    }
+    return null;
   }
 
   function renderFinding(f: Finding): HTMLLIElement {
@@ -225,6 +467,8 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
     const fix = el('details', 'finding-fix');
     fix.append(el('summary', '', '直し方'), el('p', '', m.fix));
     item.append(fix);
+    const action = findingAction(f);
+    if (action) item.append(action);
     if (f.pages.length > 0) {
       const pages = el('div', 'finding-pages');
       pages.append(el('span', '', 'ページ:'));
@@ -249,11 +493,12 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
   // ---------- プレビュー ----------
 
   previewPrev.addEventListener('click', () => {
-    if (!analysis || previewPage === 0) return;
+    if (!current() || previewPage === 0) return;
     previewPage--;
     void renderPreview();
   });
   previewNext.addEventListener('click', () => {
+    const analysis = current();
     if (!analysis || previewPage >= analysis.report.layouts.length - 1) return;
     previewPage++;
     void renderPreview();
@@ -272,11 +517,13 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
   }
 
   async function renderPreview(): Promise<void> {
+    const analysis = current();
     if (!analysis) return;
     const token = ++renderToken;
     const { renderDoc, report } = analysis;
     const count = report.layouts.length;
-    previewLabel.textContent = `${previewPage + 1} / ${count} ページ`;
+    previewPage = Math.min(previewPage, count - 1);
+    previewLabel.textContent = `${previewPage + 1} / ${count} ページ${fixed ? '(入稿用 PDF)' : ''}`;
     previewPrev.disabled = previewPage === 0;
     previewNext.disabled = previewPage >= count - 1;
 
@@ -307,6 +554,7 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
     const toPx = (r: Rect) => toViewportRect(viewport, r);
     const page_ = toPx(layout.page);
     const trim = toPx(layout.trim);
+    const bleed = toPx(layout.bleed);
     const safe = toPx(layout.safe);
 
     // 断裁で落ちる部分(仕上がり線の外)を暗くする
@@ -319,6 +567,10 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
     ctx.restore();
 
     ctx.lineWidth = 1.5 * ratio;
+    if (bleed.w < page_.w - 1 || bleed.h < page_.h - 1) {
+      ctx.strokeStyle = COLORS.bleed;
+      ctx.strokeRect(bleed.x, bleed.y, bleed.w, bleed.h);
+    }
     ctx.strokeStyle = COLORS.trim;
     ctx.strokeRect(trim.x, trim.y, trim.w, trim.h);
     ctx.setLineDash([6 * ratio, 4 * ratio]);

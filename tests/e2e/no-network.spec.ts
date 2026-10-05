@@ -19,6 +19,9 @@ test('一連の操作の間、外部オリジンへのリクエストが 0 件�
     });
   });
 
+  const violations = () => page.evaluate(() => (window as unknown as { __csp: string[] }).__csp);
+
+  // 1. 編集: 読み込み・サムネイル・結合・分割
   await page.goto('/');
   await addPdfs(page, [
     { name: 'a.pdf', buffer: await makePdf('A', [101, 102, 103]) },
@@ -28,14 +31,33 @@ test('一連の操作の間、外部オリジンへのリクエストが 0 件�
   await Promise.all([page.waitForEvent('download'), page.click('[data-action="save-all"]')]);
   await page.click('[data-action="open-split"]');
   await Promise.all([page.waitForEvent('download'), page.click('#split-form button[type="submit"]')]);
-  // 入稿チェック(pdf.js による文字の解析と描画を含む)
+  expect(await violations()).toEqual([]);
+
+  // 2. 入稿: A5 の PDF でチェック(文字の解析・描画・くすみ判定)→ 入稿用 PDF(トンボ付き)を作って保存
+  await page.goto('/');
+  await addPdfs(page, [{ name: 'a5.pdf', buffer: await makeA5() }]);
   await page.click('[data-mode-tab="check"]');
   await page.click('#check-form button[type="submit"]');
   await expect(page.locator('.check-summary')).toBeVisible();
+  await page.locator('.preview-modes').getByText('印刷の目安').click();
+  await page.check('#fix-panel input[name="output"][value="marks"]');
+  await page.click('#fix-panel button[type="submit"]');
+  await expect(page.locator('.fixed-banner')).toBeVisible();
+  await Promise.all([page.waitForEvent('download'), page.click('.fixed-actions .btn-primary')]);
+  expect(await violations()).toEqual([]);
 
   expect(external).toEqual([]);
-  expect(await page.evaluate(() => (window as unknown as { __csp: string[] }).__csp)).toEqual([]);
 });
+
+async function makeA5(): Promise<Buffer> {
+  const { PDFDocument, rgb, StandardFonts } = await import('@cantoo/pdf-lib');
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([148 * (72 / 25.4), 210 * (72 / 25.4)]);
+  page.drawRectangle({ x: 0, y: 0, width: page.getWidth(), height: page.getHeight(), color: rgb(0.1, 0.4, 0.9) });
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  page.drawText('Hello', { x: 60, y: 300, size: 24, font });
+  return Buffer.from(await doc.save());
+}
 
 test('ページから外部への fetch は CSP(connect-src)で止まる', async ({ page }) => {
   await page.goto('/');

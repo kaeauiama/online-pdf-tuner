@@ -62,6 +62,8 @@ export interface PageFacts {
   readonly edges?: readonly SideStats[];
   /** くすみ警告用: 仕上がりの内側の画素の集計 */
   readonly gamut?: GamutStats;
+  /** 白いフチを除いた中身の範囲(pt、ページ座標)。入稿修正で使う */
+  readonly contentBounds?: Rect;
 }
 
 export type Binding = 'none' | 'saddle';

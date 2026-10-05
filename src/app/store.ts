@@ -35,10 +35,16 @@ export class Store {
   }
 
   addSource(name: string, bytes: Uint8Array, pageCount: number): Source {
+    return this.insertSource(name, bytes, pageCount, this.pages.length);
+  }
+
+  /** ファイルを読み込み、そのページを並びの atIndex の位置に差し込む(1 回の操作として履歴に積む) */
+  insertSource(name: string, bytes: Uint8Array, pageCount: number, atIndex: number): Source {
     const n = this.sourceCount++;
     const source: Source = { id: `s${n + 1}`, name, bytes, pageCount, colorIndex: n % SOURCE_COLOR_COUNT };
     this.sources.set(source.id, source);
-    this.commit([...this.pages, ...createPageRefs(source.id, pageCount)]);
+    const at = Math.max(0, Math.min(atIndex, this.pages.length));
+    this.commit([...this.pages.slice(0, at), ...createPageRefs(source.id, pageCount), ...this.pages.slice(at)]);
     return source;
   }
 

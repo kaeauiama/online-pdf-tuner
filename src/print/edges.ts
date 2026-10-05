@@ -12,6 +12,8 @@ export interface EdgeScanInput {
   readonly height: number;
   /** 仕上がり位置(画素座標、左上原点。x0,y0 が左上) */
   readonly trimPx: Rect;
+  /** 塗り足しの外端(画素座標)。省略時は画像全体。トンボ付きのページでは、その外側は白い余白 */
+  readonly bleedPx?: Rect;
   readonly pxPerMm: number;
 }
 
@@ -51,8 +53,9 @@ export function scanEdges(input: EdgeScanInput): SideStats[] {
     const [dx, dy] = side === 'top' ? [0, -1] : side === 'bottom' ? [0, 1] : side === 'left' ? [-1, 0] : [1, 0];
     const edgeX = side === 'left' ? t.x0 : side === 'right' ? t.x1 : 0;
     const edgeY = side === 'top' ? t.y0 : side === 'bottom' ? t.y1 : 0;
-    // ページ端までの距離(塗り足しの幅、画素)
-    const room = side === 'top' ? t.y0 : side === 'left' ? t.x0 : side === 'bottom' ? input.height - t.y1 : input.width - t.x1;
+    // 塗り足しの外端までの距離(塗り足しの幅、画素)
+    const b = input.bleedPx ?? { x0: 0, y0: 0, x1: input.width, y1: input.height };
+    const room = side === 'top' ? t.y0 - b.y0 : side === 'left' ? t.x0 - b.x0 : side === 'bottom' ? b.y1 - t.y1 : b.x1 - t.x1;
     const hasBleed = room >= 1 * pxPerMm;
     const outerDepths = hasBleed ? [...outer, Math.max(outer[0], room - 0.5 * pxPerMm)] : [];
 
