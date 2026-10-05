@@ -1262,3 +1262,116 @@ svg {
   flex-wrap: wrap;
   gap: 8px;
 }
+
+/* ---------- 誤植を直す(S1・試験的) ---------- */
+
+.beta-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.dialog-wide {
+  width: min(720px, calc(100vw - 32px));
+}
+
+.typo-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.typo-fields .input-text {
+  width: 100%;
+}
+
+.checkbox-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 14px;
+}
+
+.typo-results {
+  max-height: 46vh;
+  overflow: auto;
+}
+
+.typo-summary,
+.typo-empty {
+  margin: 4px 0 8px;
+  font-weight: 600;
+}
+
+.typo-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.typo-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.typo-item {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--ok);
+  border-radius: 8px;
+}
+
+.typo-item.is-ng {
+  border-left-color: var(--danger);
+}
+
+.typo-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.typo-line input {
+  margin-top: 4px;
+}
+
+.typo-page {
+  display: inline-block;
+  margin-right: 8px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.typo-old {
+  background: var(--danger-soft);
+  color: var(--danger);
+  text-decoration: line-through;
+}
+
+.typo-new {
+  background: color-mix(in srgb, var(--ok) 18%, transparent);
+  color: var(--text);
+}
+
+.typo-reason {
+  margin: 4px 0 0 24px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+@media (max-width: 720px) {
+  .typo-fields {
+    grid-template-columns: 1fr;
+  }
+}

@@ -17,6 +17,7 @@ import { setupCheckView } from './checkView.ts';
 import { downloadBytes } from './download.ts';
 import { Store } from './store.ts';
 import { Thumbnails } from './thumbnails.ts';
+import { setupTypoDialog } from './typoDialog.ts';
 import { $, createUi, el } from './ui.ts';
 
 const PAGE_DRAG_TYPE = 'application/x-pdf-page-keys';
@@ -75,6 +76,7 @@ export function startApp(): void {
     setEnabled('redo', store.canRedo);
     setEnabled('save-all', hasPages);
     setEnabled('open-split', hasPages);
+    setEnabled('open-typo', hasPages);
   }
 
   function setEnabled(action: string, enabled: boolean): void {
@@ -430,6 +432,7 @@ export function startApp(): void {
   $<HTMLButtonElement>('#privacy-open').addEventListener('click', () => privacyDialog.showModal());
 
   setupCheckView(store, { toast, toastReason, run }, () => setMode('edit'));
+  setupTypoDialog(store, { toast, toastReason, run });
 
   store.subscribe(render);
   setMode('edit');

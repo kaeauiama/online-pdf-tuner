@@ -48,6 +48,27 @@ export class Store {
     return source;
   }
 
+  /**
+   * ファイルの中身を差し替える(誤植修正など)。新しい版を別のファイルとして登録し、ページの参照を付け替える。
+   * 古い版は残すので、元に戻すことができる
+   */
+  replaceSources(replacements: ReadonlyMap<SourceId, Uint8Array>): void {
+    const idMap = new Map<SourceId, SourceId>();
+    for (const [oldId, bytes] of replacements) {
+      const old = this.sources.get(oldId);
+      if (!old) continue;
+      const id = `s${++this.sourceCount}`;
+      this.sources.set(id, { ...old, id, bytes });
+      idMap.set(oldId, id);
+    }
+    this.commit(
+      this.pages.map((p) => {
+        const id = idMap.get(p.sourceId);
+        return id ? { ...p, sourceId: id, key: `${id}:${p.pageIndex}` } : p;
+      }),
+    );
+  }
+
   /** ページの並びを変更する(履歴に積む) */
   commit(next: readonly PageRef[]): void {
     this.past.push(this.pages);

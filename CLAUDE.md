@@ -40,7 +40,8 @@
 - `src/render/pdfjs.ts` — pdf.js による描画。ワーカーは blob: 経由で生成して CSP を継承させる
 - `src/pdf/lexer.ts` — コンテンツストリームの解析器(入稿チェックと誤植修正で使う)
 - `src/print/` — 入稿チェック。`profiles.ts`(印刷所ごとの値)と `thresholds.ts`(共通の閾値)が単一ソース
-- `src/app/` — 画面と操作(`app.ts` が編集画面、`checkView.ts` が入稿チェック画面)
+- `src/typo/` — 誤植修正(S1・試験的)。フォントの許諾(fsType)の確認は `src/pdf/fonts.ts`
+- `src/app/` — 画面と操作(`app.ts` が編集画面、`checkView.ts` が入稿チェック画面、`typoDialog.ts` が誤植修正)
 - `scripts/inspect-pdf.mjs` — PDF の構造を調べる開発用ツール
 
 ## 進め方

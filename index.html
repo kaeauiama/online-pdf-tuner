@@ -73,6 +73,12 @@
           </button>
         </div>
 
+        <div class="tool-group" role="group" aria-label="文字">
+          <button type="button" class="btn" data-action="open-typo" title="PDF の中の文字を、同じ字数の別の字に置き換えます(試験的)">
+            誤植を直す<span class="beta-tag">試験的</span>
+          </button>
+        </div>
+
         <div class="tool-spacer"></div>
 
         <div class="tool-group" role="group" aria-label="保存">
@@ -189,6 +195,34 @@
         <div class="dialog-actions">
           <button type="button" class="btn" value="cancel" data-close>キャンセル</button>
           <button type="submit" class="btn btn-primary" value="ok">分割して保存</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="typo-dialog" class="dialog dialog-wide">
+      <form id="typo-form">
+        <h2>誤植を直す <span class="beta-tag">試験的</span></h2>
+        <p class="dialog-lead">
+          PDF の中の文字を、同じ字数の別の字に置き換えます。直せるのは、PDF に埋め込まれた同じフォントにその字があり、
+          字の幅が同じで、フォントが文書の編集を許可している場合だけです。いちばん確実なのは、元の Word などで直して PDF を作り直すことです。
+        </p>
+        <div class="typo-fields">
+          <label class="field">
+            <span class="field-label">直したい文字</span>
+            <input name="find" class="input-text" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span class="field-label">正しい文字(同じ字数)</span>
+            <input name="replace" class="input-text" autocomplete="off" />
+          </label>
+        </div>
+        <label class="checkbox-line"><input type="checkbox" name="selectedOnly" /> 選択中のページだけ</label>
+        <p class="form-error" id="typo-error" role="alert"></p>
+        <div id="typo-results" class="typo-results" aria-live="polite"></div>
+        <div class="dialog-actions">
+          <button type="button" class="btn" data-close>閉じる</button>
+          <button type="submit" class="btn">探す</button>
+          <button type="button" class="btn btn-primary" id="typo-apply" disabled>選んだ箇所を置き換える</button>
         </div>
       </form>
     </dialog>

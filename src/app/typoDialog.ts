@@ -1,0 +1,148 @@
+// 誤植を直す(S1・試験的)のダイアログ。
+import type { PDFDocument } from '@cantoo/pdf-lib';
+import { loadPdfForEditOrThrow } from '../core/pdfLoad.ts';
+import type { SourceId } from '../core/pageList.ts';
+import { applyTypos, findTypos, TYPO_MESSAGES, type TypoMatch } from '../typo/typo.ts';
+import type { Store } from './store.ts';
+import { $, el, type Ui } from './ui.ts';
+
+interface FoundMatch {
+  readonly sourceId: SourceId;
+  /** 並びの中での位置(1 始まり。表示用) */
+  readonly displayPage: number;
+  readonly match: TypoMatch;
+}
+
+export function setupTypoDialog(store: Store, ui: Ui): void {
+  const dialog = $<HTMLDialogElement>('#typo-dialog');
+  const form = $<HTMLFormElement>('#typo-form');
+  const errorBox = $<HTMLElement>('#typo-error');
+  const resultsBox = $<HTMLElement>('#typo-results');
+  const applyButton = $<HTMLButtonElement>('#typo-apply');
+
+  let found: FoundMatch[] = [];
+  let replaceText = '';
+
+  $<HTMLButtonElement>('[data-action="open-typo"]').addEventListener('click', () => {
+    errorBox.textContent = '';
+    resultsBox.replaceChildren();
+    found = [];
+    applyButton.disabled = true;
+    dialog.showModal();
+  });
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    void search();
+  });
+
+  async function search(): Promise<void> {
+    const data = new FormData(form);
+    const find = String(data.get('find') ?? '');
+    const replace = String(data.get('replace') ?? '');
+    errorBox.textContent = '';
+    if (find === '' || replace === '') {
+      errorBox.textContent = '直したい文字と、正しい文字を入れてください。';
+      return;
+    }
+    if (Array.from(find).length !== Array.from(replace).length) {
+      errorBox.textContent = `字数が違います(${Array.from(find).length} 字 → ${Array.from(replace).length} 字)。この機能では、同じ字数の置き換えだけができます。`;
+      return;
+    }
+    if (find === replace) {
+      errorBox.textContent = '直したい文字と正しい文字が同じです。';
+      return;
+    }
+    const selectedOnly = data.get('selectedOnly') === 'on';
+    const pages = store.pages.filter((p) => !selectedOnly || store.selection.has(p.key));
+    if (pages.length === 0) {
+      errorBox.textContent = selectedOnly ? 'ページが選択されていません。' : 'ページがありません。';
+      return;
+    }
+
+    await ui.run('文字を探しています…', async () => {
+      const position = new Map(store.pages.map((p, i) => [`${p.sourceId}:${p.pageIndex}`, i + 1]));
+      const bySource = new Map<SourceId, number[]>();
+      for (const p of pages) bySource.set(p.sourceId, [...(bySource.get(p.sourceId) ?? []), p.pageIndex]);
+      const next: FoundMatch[] = [];
+      for (const [sourceId, pageIndexes] of bySource) {
+        const doc = await loadPdfForEditOrThrow(store.sources.get(sourceId)!.bytes);
+        for (const match of findTypos(doc, pageIndexes, find, replace)) {
+          next.push({ sourceId, displayPage: position.get(`${sourceId}:${match.pageIndex}`) ?? 0, match });
+        }
+      }
+      next.sort((a, b) => a.displayPage - b.displayPage);
+      found = next;
+      replaceText = replace;
+      renderResults(find, replace);
+    });
+  }
+
+  function renderResults(find: string, replace: string): void {
+    if (found.length === 0) {
+      resultsBox.replaceChildren(
+        el('p', 'typo-empty', `「${find}」は見つかりませんでした。`),
+        el('p', 'typo-hint', '文字が画像になっている場合や、文字の途中で記録が分かれている場合は見つかりません。'),
+      );
+      applyButton.disabled = true;
+      return;
+    }
+    const fixable = found.filter((f) => f.match.fixable).length;
+    const list = el('ul', 'typo-list');
+    found.forEach((f, i) => {
+      const item = el('li', `typo-item ${f.match.fixable ? 'is-ok' : 'is-ng'}`);
+      const line = el('label', 'typo-line');
+      const check = el('input');
+      check.type = 'checkbox';
+      check.dataset.index = String(i);
+      check.checked = f.match.fixable;
+      check.disabled = !f.match.fixable;
+      const text = el('span', 'typo-text');
+      const b = f.match.before;
+      const a = f.match.after;
+      text.append(
+        el('span', 'typo-page', `${f.displayPage} ページ目`),
+        `…${b}`,
+        el('mark', 'typo-old', find),
+        `${a}…`,
+        f.match.fixable ? ' → ' : '',
+      );
+      if (f.match.fixable) text.append(`…${b}`, el('mark', 'typo-new', replace), `${a}…`);
+      line.append(check, text);
+      item.append(line);
+      if (!f.match.fixable && f.match.reason) item.append(el('p', 'typo-reason', TYPO_MESSAGES[f.match.reason](f.match)));
+      list.append(item);
+    });
+    const summary = el(
+      'p',
+      'typo-summary',
+      `${found.length} 箇所見つかりました。そのうち ${fixable} 箇所を置き換えられます。${fixable < found.length ? '置き換えられない箇所は、理由を表示しています。' : ''}`,
+    );
+    resultsBox.replaceChildren(summary, list);
+    applyButton.disabled = fixable === 0;
+    applyButton.textContent = `選んだ箇所を置き換える`;
+  }
+
+  applyButton.addEventListener('click', () => void apply());
+
+  async function apply(): Promise<void> {
+    const chosen = [...resultsBox.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:checked')]
+      .map((c) => found[Number(c.dataset.index)])
+      .filter((f) => f?.match.fixable);
+    if (chosen.length === 0) return;
+    await ui.run('置き換えています…', async () => {
+      const bySource = new Map<SourceId, TypoMatch[]>();
+      for (const f of chosen) bySource.set(f.sourceId, [...(bySource.get(f.sourceId) ?? []), f.match]);
+      const replacements = new Map<SourceId, Uint8Array>();
+      let count = 0;
+      for (const [sourceId, matches] of bySource) {
+        const doc: PDFDocument = await loadPdfForEditOrThrow(store.sources.get(sourceId)!.bytes);
+        count += applyTypos(doc, matches);
+        replacements.set(sourceId, await doc.save({ useObjectStreams: true }));
+      }
+      store.replaceSources(replacements);
+      dialog.close();
+      ui.toast(`${count} 箇所を「${replaceText}」に置き換えました。元に戻すには Ctrl+Z を押してください。`);
+    });
+  }
+}
