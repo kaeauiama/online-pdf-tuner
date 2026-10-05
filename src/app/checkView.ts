@@ -2,6 +2,7 @@
 import { buildPdf, SourceCache } from '../core/build.ts';
 import { analyzeForPrint, type PrintAnalysis } from '../print/analyze.ts';
 import type { Binding, Finding, Mark, Severity } from '../print/checks.ts';
+import { highlightOutOfGamut, simulatePrint } from '../print/gamut.ts';
 import { ptToMm, rectHeight, rectWidth, type Rect } from '../print/geometry.ts';
 import type { PageLayout } from '../print/layout.ts';
 import { PRINT_MESSAGES } from '../print/messages.ts';
@@ -40,6 +41,7 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
   const previewPrev = $<HTMLButtonElement>('#preview-prev');
   const previewNext = $<HTMLButtonElement>('#preview-next');
   const previewPanel = $<HTMLElement>('#check-preview');
+  const previewModeNote = $<HTMLElement>('#preview-mode-note');
 
   let analysis: PrintAnalysis | null = null;
   let stale = false;
@@ -257,6 +259,18 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
     void renderPreview();
   });
 
+  type PreviewMode = 'normal' | 'gamut' | 'print';
+  const MODE_NOTE: Record<PreviewMode, string> = {
+    normal: '',
+    gamut: '色が残っている所が、印刷でくすみやすい色です(灰色の部分は問題ありません)。判定は一般的なオフセット印刷を基準にした目安です。',
+    print: '印刷したときのおおよその色です。画面の設定・印刷所・紙によって実際の色は変わります。',
+  };
+  const previewMode = (): PreviewMode =>
+    (document.querySelector<HTMLInputElement>('input[name="preview-mode"]:checked')?.value as PreviewMode) ?? 'normal';
+  for (const radio of document.querySelectorAll<HTMLInputElement>('input[name="preview-mode"]')) {
+    radio.addEventListener('change', () => void renderPreview());
+  }
+
   async function renderPreview(): Promise<void> {
     if (!analysis) return;
     const token = ++renderToken;
@@ -280,7 +294,15 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
     await page.render({ canvas, viewport }).promise;
     if (token !== renderToken) return; // 描画中に別のページが選ばれた
 
-    const ctx = canvas.getContext('2d')!;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+    const mode = previewMode();
+    if (mode !== 'normal') {
+      const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const converted = mode === 'gamut' ? highlightOutOfGamut(image.data) : simulatePrint(image.data);
+      ctx.putImageData(new ImageData(converted, image.width, image.height), 0, 0);
+    }
+    previewModeNote.textContent = MODE_NOTE[mode];
+    previewModeNote.hidden = mode === 'normal';
     const layout = report.layouts[previewPage];
     const toPx = (r: Rect) => toViewportRect(viewport, r);
     const page_ = toPx(layout.page);

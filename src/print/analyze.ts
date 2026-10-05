@@ -5,6 +5,7 @@ import { openForRender } from '../render/pdfjs.ts';
 import { toViewportRect } from '../render/viewport.ts';
 import { runChecks, type CheckOptions, type PageFacts, type PrintReport } from './checks.ts';
 import { scanEdges, type SideStats } from './edges.ts';
+import { measureGamut } from './gamut.ts';
 import { PT_PER_MM, rect, type Rect } from './geometry.ts';
 import { resolveLayout } from './layout.ts';
 import { scanStructure } from './structure.ts';
@@ -59,8 +60,10 @@ export async function analyzeForPrint(
       trimPx,
       pxPerMm: EDGE_RENDER_PX_PER_MM,
     });
+    // くすみ警告: 仕上がりの内側(実際に印刷に残る部分)だけを調べる
+    const gamut = measureGamut(image.data, image.width, image.height, trimPx);
     page.cleanup();
-    facts.push({ structure, textBoxes, edges });
+    facts.push({ structure, textBoxes, edges, gamut });
   }
 
   return { report: runChecks(facts, options), facts, renderDoc };

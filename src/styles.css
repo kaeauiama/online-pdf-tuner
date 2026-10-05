@@ -1087,3 +1087,57 @@ svg {
     padding: 16px;
   }
 }
+
+/* ---------- プレビューの表示切り替え(くすみ警告) ---------- */
+
+.preview-toolbar {
+  flex-wrap: wrap;
+}
+
+.preview-modes {
+  display: inline-flex;
+  margin-left: 12px;
+  padding: 3px;
+  gap: 2px;
+  background: var(--surface-2);
+  border-radius: 8px;
+}
+
+.preview-modes label {
+  position: relative;
+  cursor: pointer;
+}
+
+.preview-modes input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.preview-modes span {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.preview-modes input:checked + span {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: var(--shadow);
+}
+
+.preview-modes input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.preview-mode-note {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  font-size: 13px;
+}

@@ -133,7 +133,13 @@
           <button type="button" class="btn btn-icon" id="preview-next" aria-label="次のページ">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
           </button>
+          <div class="preview-modes" role="radiogroup" aria-label="プレビューの表示">
+            <label><input type="radio" name="preview-mode" value="normal" checked /><span>そのまま</span></label>
+            <label><input type="radio" name="preview-mode" value="gamut" /><span>くすみやすい所</span></label>
+            <label><input type="radio" name="preview-mode" value="print" /><span>印刷の目安</span></label>
+          </div>
         </div>
+        <p class="preview-mode-note" id="preview-mode-note" hidden></p>
         <div class="preview-stage">
           <canvas id="preview-canvas" role="img"></canvas>
         </div>

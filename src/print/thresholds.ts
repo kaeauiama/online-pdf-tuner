@@ -27,3 +27,12 @@ export const EDGE_RENDER_PX_PER_MM = 4;
 
 /** 文字の位置判定の許容誤差(pt) */
 export const TEXT_TOLERANCE_PT = 0.5;
+
+/** くすみ警告: 印刷で出せる彩度をこれ以上超える色を「くすみやすい」とする(C*ab) */
+export const GAMUT_MODERATE_DELTA_C = 8;
+/** くすみ警告: これ以上超える色を「大きくくすむ」とする */
+export const GAMUT_STRONG_DELTA_C = 20;
+/** くすみ警告: 仕上がり面積のうち、大きくくすむ色がこの割合以上なら WARN */
+export const GAMUT_WARN_AREA_RATIO = 0.05;
+/** くすみ警告: くすみやすい色がこの割合以上なら INFO(これ未満は指摘しない) */
+export const GAMUT_INFO_AREA_RATIO = 0.005;

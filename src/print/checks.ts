@@ -1,6 +1,7 @@
 // 入稿チェック本体(純粋関数)。ページごとの事実と設定から、指摘の一覧を作る。
 import type { SideStats } from './edges.ts';
 import { displayedSide } from './edges.ts';
+import type { GamutStats } from './gamut.ts';
 import { containsRect, intersects, ptToMm, rectHeight, rectWidth, type Rect } from './geometry.ts';
 import { resolveLayout, type PageLayout, type PaperChoice } from './layout.ts';
 import { formatSize } from './paperSizes.ts';
@@ -10,6 +11,8 @@ import type { TextBox } from './textBoxes.ts';
 import {
   EDGE_PROBLEM_RATIO,
   FLAT_IMAGE_COMPRESSION_RATIO,
+  GAMUT_INFO_AREA_RATIO,
+  GAMUT_WARN_AREA_RATIO,
   LOW_DPI_WARN,
   MIN_IMAGE_AREA_MM2,
   MIN_IMAGE_PIXELS,
@@ -33,6 +36,7 @@ export type PrintCode =
   | 'PRINT_PAGE_COUNT_SADDLE'
   | 'PRINT_HAS_ANNOTATIONS'
   | 'PRINT_HAS_FORM_FIELDS'
+  | 'PRINT_COLOR_DULL'
   | 'PRINT_RGB_CONTENT'
   | 'PRINT_TRANSPARENCY';
 
@@ -56,6 +60,8 @@ export interface PageFacts {
   readonly structure: PageStructure;
   readonly textBoxes?: readonly TextBox[];
   readonly edges?: readonly SideStats[];
+  /** くすみ警告用: 仕上がりの内側の画素の集計 */
+  readonly gamut?: GamutStats;
 }
 
 export type Binding = 'none' | 'saddle';
@@ -253,8 +259,25 @@ export function runChecks(pages: readonly PageFacts[], options: CheckOptions): P
   const forms = pages.flatMap((p, i) => (p.structure.annotations.widgets > 0 ? [i] : []));
   if (forms.length > 0) add('PRINT_HAS_FORM_FIELDS', 'warn', forms, `${pageList(forms)} ページ目`);
 
+  // ---- くすみ(S2) ----
+  const dull: { page: number; moderate: number; strong: number }[] = [];
+  pages.forEach((p, i) => {
+    if (!p.gamut || p.gamut.pixels === 0) return;
+    const moderate = p.gamut.moderate / p.gamut.pixels;
+    const strong = p.gamut.strong / p.gamut.pixels;
+    if (moderate >= GAMUT_INFO_AREA_RATIO) dull.push({ page: i, moderate, strong });
+  });
+  if (dull.length > 0) {
+    const pct = (v: number) => (v < 0.01 ? '1% 未満' : `約 ${Math.round(v * 100)}%`);
+    const severity: Severity = dull.some((d) => d.strong >= GAMUT_WARN_AREA_RATIO) ? 'warn' : 'info';
+    const detail = dull
+      .map((d) => `${d.page + 1} ページ目: 面積の${pct(d.moderate)}${d.strong >= 0.005 ? `(大きくくすむ所 ${pct(d.strong)})` : ''}`)
+      .join('、');
+    add('PRINT_COLOR_DULL', severity, dull.map((d) => d.page), detail);
+  }
+
   // ---- 色・透明(情報) ----
-  const rgb = pages.flatMap((p, i) => (p.structure.colorUse.rgb > 0 ? [i] : []));
+  const rgb =pages.flatMap((p, i) => (p.structure.colorUse.rgb > 0 ? [i] : []));
   if (rgb.length > 0) add('PRINT_RGB_CONTENT', 'info', rgb, `${pageList(rgb)} ページ目`);
   const transparent = pages.flatMap((p, i) => (p.structure.transparency ? [i] : []));
   if (transparent.length > 0) add('PRINT_TRANSPARENCY', 'info', transparent, `${pageList(transparent)} ページ目`);

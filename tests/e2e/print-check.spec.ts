@@ -46,6 +46,7 @@ test('問題のある PDF: 塗り足し・文字の位置・解像度・フォ�
     'PRINT_FONT_NOT_EMBEDDED',
     'PRINT_TEXT_IN_UNSAFE_AREA',
     'PRINT_IMAGE_LOW_DPI',
+    'PRINT_COLOR_DULL', // 模様の画像に鮮やかな色が含まれる
     'PRINT_RGB_CONTENT',
   ]);
   // 端まで色があるのは下の帯だけ(左右の辺も下の部分だけ色がある)
@@ -105,6 +106,43 @@ test('編集すると結果が古いことを示し、再チェック後も編�
   await page.click('[data-mode-tab="edit"]');
   await addPdfs(page, [{ name: 'good2.pdf', buffer: await goodPdf() }]);
   await expect(page.locator('.thumb canvas[data-state="done"]')).toHaveCount(3);
+});
+
+test('くすみ警告: 鮮やかな青の背景を指摘し、プレビューを「くすみやすい所」「印刷の目安」に切り替えられる', async ({ page }) => {
+  const doc = await PDFDocument.create();
+  const p = doc.addPage([154 * MM, 216 * MM]);
+  p.drawRectangle({ x: 0, y: 0, width: 154 * MM, height: 216 * MM, color: rgb(0, 0.2, 1) });
+  await page.goto('/');
+  await addPdfs(page, [{ name: 'blue.pdf', buffer: Buffer.from(await doc.save()) }]);
+  await runCheck(page);
+
+  const dull = page.locator('.finding').filter({ hasText: 'PRINT_COLOR_DULL' });
+  await expect(dull.locator('.sev-badge')).toHaveText('注意');
+  await expect(dull.locator('.finding-detail')).toContainText('約 100%');
+
+  const centerPixel = () =>
+    page.evaluate(() => {
+      const c = document.querySelector<HTMLCanvasElement>('#preview-canvas')!;
+      return [...c.getContext('2d')!.getImageData(Math.floor(c.width / 2), Math.floor(c.height / 2), 1, 1).data.slice(0, 3)];
+    });
+  const chroma = ([r, g, b]: number[]) => Math.max(r, g, b) - Math.min(r, g, b);
+
+  // 結果の一覧が先に出て、プレビューはその後に描かれるので、描画を待つ
+  await expect.poll(async () => (await centerPixel())[2]).toBeGreaterThan(200);
+  const original = await centerPixel();
+
+  await page.locator('.preview-modes').getByText('くすみやすい所').click();
+  await expect(page.locator('#preview-mode-note')).toContainText('くすみやすい色');
+  // くすみやすい色は元の色のまま残る
+  await expect.poll(centerPixel).toEqual(original);
+
+  await page.locator('.preview-modes').getByText('印刷の目安').click();
+  await expect(page.locator('#preview-mode-note')).toContainText('おおよその色');
+  await expect.poll(async () => chroma(await centerPixel())).toBeLessThan(chroma(original) - 30);
+
+  await page.locator('.preview-modes').getByText('そのまま').click();
+  await expect(page.locator('#preview-mode-note')).toBeHidden();
+  await expect.poll(centerPixel).toEqual(original);
 });
 
 test('入稿チェック画面では、Delete キーでページが消えない', async ({ page }) => {

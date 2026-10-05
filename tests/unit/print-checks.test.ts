@@ -188,6 +188,18 @@ describe('runChecks: フォント・画像・その他', () => {
     ]);
   });
 
+  it('くすみ: 大きくくすむ色が面積の 5% 以上なら WARN、少しなら INFO、わずかなら指摘しない', () => {
+    const facts = (moderate: number, strong: number): PageFacts[] => [
+      { structure: structure(154, 216), gamut: { pixels: 10000, moderate, strong } },
+    ];
+    const warn = runChecks(facts(1200, 600), opts()).findings[0];
+    expect(warn).toMatchObject({ code: 'PRINT_COLOR_DULL', severity: 'warn' });
+    expect(warn.detail).toContain('約 12%');
+    expect(warn.detail).toContain('大きくくすむ所 約 6%');
+    expect(runChecks(facts(300, 0), opts()).findings[0]).toMatchObject({ code: 'PRINT_COLOR_DULL', severity: 'info' });
+    expect(codes(facts(20, 0))).toEqual([]);
+  });
+
   it('RGB と透明効果は INFO', () => {
     const s = structure(154, 216, { colorUse: { rgb: 5, cmyk: 0, gray: 0, spot: 0, other: 0 }, transparency: true });
     const report = runChecks([{ structure: s }], opts());
