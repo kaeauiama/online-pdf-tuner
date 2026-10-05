@@ -22,6 +22,24 @@
 - **HC-3** アクセス解析・トラッキングを入れない
 - **HC-4** パスワードを知らない暗号化PDFの解除・権限制限の回避をしない
 
+## 開発コマンド
+
+| コマンド | 内容 |
+|---|---|
+| `npm run dev` | 開発サーバー(CSP なし。HMR のため) |
+| `npm run build` | 型チェック → ビルド → `scripts/verify-dist.mjs`(CSP と外部読み込みの検査) |
+| `npm test` | 単体テスト(Vitest) |
+| `npm run test:e2e` | ビルドして E2E テスト(Playwright。インストール済みの Edge を使う) |
+| `node scripts/make-sample-pdfs.mjs <dir>` | 手動確認用のサンプル PDF を作る |
+
+## コードの構成
+
+- `src/core/` — PDF 処理の純粋関数(ページの並び、範囲の解釈、書き出し)。UI に依存しない
+- `src/core/pdfLoad.ts` — PDF を編集用に読み込む唯一の入口(HC-4 のガード)
+- `src/security/csp.ts` — CSP の単一ソース(HC-1/2/3 のガード)
+- `src/render/pdfjs.ts` — pdf.js による描画。ワーカーは blob: 経由で生成して CSP を継承させる
+- `src/app/` — 画面と操作
+
 ## 進め方
 
 - スコープ拡大・制約の例外は、ユーザーの明示承認を得てから行う。承認は日付つきで Decision Log に記録する。

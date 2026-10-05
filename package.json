@@ -1,0 +1,27 @@
+{
+  "name": "pwa-pdf",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "assets": "node scripts/copy-pdfjs-assets.mjs",
+    "dev": "npm run assets && vite",
+    "build": "npm run assets && tsc --noEmit && vite build && node scripts/verify-dist.mjs",
+    "preview": "vite preview --port 4173 --strictPort",
+    "test": "vitest run",
+    "test:e2e": "npm run build && playwright test"
+  },
+  "dependencies": {
+    "@cantoo/pdf-lib": "^2.11.1",
+    "fflate": "^0.8.3",
+    "pdfjs-dist": "^6.4.299"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^26.6.4",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.2",
+    "vitest": "^5.0.3"
+  }
+}
