@@ -1,0 +1,7 @@
+node_modules/
+dist/
+# pdf.js の同梱アセット(scripts/copy-pdfjs-assets.mjs が node_modules から生成する)
+public/pdfjs/
+test-results/
+playwright-report/
+*.local
