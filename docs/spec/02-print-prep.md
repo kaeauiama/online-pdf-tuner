@@ -1,6 +1,6 @@
 # 02. 入稿調整(Print Prep)
 
-状態: 草案(2026-10-06)。差別化の柱(D-005)。
+状態: Check(M2)は 2026-10-06 実装済み。Fix(M3)は草案。差別化の柱(D-005)。
 
 ## 背景
 
@@ -20,28 +20,44 @@ Word 上では難しい。そこで、出来上がった PDF を入力にして�
 
 ## 印刷所プロファイル
 
-印刷所ごとのルール(塗り足し量、安全領域、トンボの要否、推奨解像度、中綴じのページ数の倍数 等)は
-**データとして持つ**。各プロファイルには出典 URL と確認日を付け、UI には「非公式・入稿前に印刷所の最新ガイドを確認」と表示する。
-初期値の根拠は `../research/2026-10-print-shop-guides.md`。実装後は `src/print/profiles.ts`(予定)を正とする。
+印刷所ごとのルール(塗り足し量、安全領域、推奨解像度、手動チェック項目)は**データとして持つ**。
+各プロファイルには出典 URL・原文の引用・確認日を付け、UI には「非公式の目安」と表示する(D-009)。
+値の正は `src/print/profiles.ts`。印刷所によらない閾値は `src/print/thresholds.ts`。
 
 ## Check(読み取りのみ・M2)
 
-重大度は ERROR / WARN / INFO。どの重大度にするかはプロファイルごとに変えられるようにする。
+「ページの編集」に並んでいるページを PDF に書き出し、次の 3 つを組み合わせて判定する(`src/print/`)。
 
-| 理由コード | 内容 | 実現性 |
+- **構造**(`structure.ts`): pdf-lib と自前のコンテンツ解析器(`src/pdf/lexer.ts`)で、寸法・フォント・画像の配置・色・透明・注釈を取り出す
+- **文字の位置**(`textBoxes.ts`): pdf.js の getTextContent
+- **端の色**(`edges.ts`): pdf.js でページを描画し、仕上がり線の内側と外側の画素を比べる
+
+仕上がり位置は、TrimBox があればそれを使い、なければページの寸法を定形サイズ(またはその塗り足し込みのサイズ)と照合して推定する(`layout.ts`)。
+
+| 理由コード | 重大度 | 内容 |
 |---|---|---|
-| `PRINT_SIZE_MISMATCH` | ページサイズが、仕上がり・塗り足し込み・トンボ付きのどれとも一致しない | ◎ |
-| `PRINT_NO_BLEED` | 端まで絵柄があるのに塗り足しがない(描画した端のピクセルで判定) | ○ |
-| `PRINT_WHITE_EDGE` | 塗り足しのサイズはあるのに、その領域が白い(Word の余白など) | ○ |
-| `PRINT_TEXT_IN_UNSAFE_AREA` | 安全領域に文字がある(pdf.js のテキスト座標で判定) | ○ |
-| `PRINT_FONT_NOT_EMBEDDED` | 埋め込まれていないフォントがある | ◎ |
-| `PRINT_IMAGE_LOW_DPI` | 画像の実効解像度が基準未満(描画時の変換行列から計算) | ○ |
-| `PRINT_RGB_CONTENT` | RGB の色・画像がある(印刷時に CMYK 変換され、くすむ可能性) | ○ |
-| `PRINT_PAGE_COUNT` | 中綴じでページ数が 4 の倍数でない | ◎ |
-| `PRINT_HAS_ANNOTATIONS` | 注釈・フォームがある | ◎ |
-| `PRINT_ENCRYPTED` | セキュリティ設定がある | ◎ |
-| `PRINT_TRANSPARENCY` | 透明効果がある(INFO) | ○ |
-| `PRINT_THIN_LINE` | 線幅が基準未満 | △(後回し) |
+| `PRINT_SIZE_UNKNOWN` | WARN | 仕上がりサイズを判定できない(サイズを選んでもらう) |
+| `PRINT_SIZE_MISMATCH` | ERROR | 選んだ仕上がりサイズとページの大きさが合わない |
+| `PRINT_MIXED_SIZES` | WARN | ページの大きさがそろっていない(塗り足しの有無の違いも含む) |
+| `PRINT_BLEED_TOO_SMALL` | WARN | 塗り足しがプロファイルの値より小さい |
+| `PRINT_NO_BLEED` | ERROR | 端まで色があるのに塗り足しがない |
+| `PRINT_WHITE_EDGE` | ERROR | 塗り足し込みのサイズだが、塗り足しが白く抜けている |
+| `PRINT_TEXT_OUTSIDE_TRIM` | ERROR | 文字が仕上がり線の外にはみ出している |
+| `PRINT_TEXT_IN_UNSAFE_AREA` | WARN | 文字が安全領域の外(仕上がり線の近く)にある |
+| `PRINT_FONT_NOT_EMBEDDED` | ERROR | 埋め込まれていないフォントがある |
+| `PRINT_IMAGE_LOW_DPI` | WARN | 画像の実効解像度がかなり低い |
+| `PRINT_IMAGE_BELOW_RECOMMENDED` | INFO | 画像の実効解像度がプロファイルの推奨値より低い |
+| `PRINT_PAGE_COUNT_SADDLE` | ERROR | 中綴じでページ数が 4 の倍数でない |
+| `PRINT_HAS_ANNOTATIONS` | WARN | 注釈がある(リンクは除く) |
+| `PRINT_HAS_FORM_FIELDS` | WARN | 入力欄(フォーム)がある |
+| `PRINT_RGB_CONTENT` | INFO | RGB の色・画像がある |
+| `PRINT_TRANSPARENCY` | INFO | 透明効果がある |
+
+暗号化された PDF は読み込みの段階で拒否する(HC-4)ため、チェック項目には含めない。
+線幅の検査(`PRINT_THIN_LINE`)は未実装。印刷所の手動チェック項目として表示している。
+
+画像の解像度チェックは、表示サイズが小さい画像と、極端によく圧縮される「平坦な画像」(単色の塗り・なめらかなグラデーション)を対象外にする。
+Office は図形の効果にこうした画像を使い、解像度が低くても見た目に影響しないため(D-018)。
 
 ## Fix(修正・M3)
 

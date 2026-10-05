@@ -17,6 +17,10 @@
         <span class="brand-name">PDF 作業台</span>
         <span class="brand-tag">仮称</span>
       </div>
+      <nav class="mode-tabs" role="tablist" aria-label="画面の切り替え">
+        <button type="button" role="tab" class="mode-tab" data-mode-tab="edit" aria-controls="edit-view">ページの編集</button>
+        <button type="button" role="tab" class="mode-tab" data-mode-tab="check" aria-controls="check-view">入稿チェック</button>
+      </nav>
       <button type="button" class="privacy-badge" id="privacy-open">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <rect x="5" y="11" width="14" height="10" rx="2" />
@@ -26,7 +30,7 @@
       </button>
     </header>
 
-    <main>
+    <main id="edit-view" role="tabpanel" aria-label="ページの編集">
       <section class="toolbar" aria-label="操作">
         <div class="tool-group">
           <label class="btn btn-primary" for="file-input">
@@ -91,6 +95,55 @@
           <p class="dropzone-note">ファイルはインターネットに送信されません。</p>
         </div>
         <ol class="page-grid" id="grid" aria-label="ページ一覧"></ol>
+      </section>
+    </main>
+
+    <main id="check-view" class="check-view" role="tabpanel" aria-label="入稿チェック" hidden>
+      <div class="check-side">
+        <form id="check-form" class="check-settings">
+          <h2>入稿チェック</h2>
+          <p class="check-lead">「ページの編集」に並んでいるページを、印刷所に入稿する前の目線で確認します。</p>
+          <label class="field">
+            <span class="field-label">印刷所</span>
+            <select id="check-profile" name="profile"></select>
+          </label>
+          <div class="profile-note" id="profile-note"></div>
+          <label class="field">
+            <span class="field-label">仕上がりサイズ</span>
+            <select id="check-paper" name="paper"></select>
+          </label>
+          <label class="field">
+            <span class="field-label">製本</span>
+            <select name="binding">
+              <option value="none">なし(チラシ・ポスターなど)</option>
+              <option value="saddle">中綴じ(二つ折りしてホチキス留めする冊子)</option>
+            </select>
+          </label>
+          <button type="submit" class="btn btn-primary btn-block">チェックする</button>
+        </form>
+        <div id="check-results" class="check-results" aria-live="polite"></div>
+      </div>
+
+      <section class="check-preview" id="check-preview" aria-label="プレビュー" hidden>
+        <div class="preview-toolbar">
+          <button type="button" class="btn btn-icon" id="preview-prev" aria-label="前のページ">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
+          </button>
+          <span id="preview-page" class="preview-page"></span>
+          <button type="button" class="btn btn-icon" id="preview-next" aria-label="次のページ">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+          </button>
+        </div>
+        <div class="preview-stage">
+          <canvas id="preview-canvas" role="img"></canvas>
+        </div>
+        <ul class="legend">
+          <li><span class="swatch swatch-trim"></span>仕上がり線(ここで断裁します)</li>
+          <li><span class="swatch swatch-cut"></span>断裁で切り落とされる部分(塗り足し)</li>
+          <li><span class="swatch swatch-safe"></span>安全領域(文字はこの内側に)</li>
+          <li><span class="swatch swatch-text"></span>指摘した文字</li>
+          <li><span class="swatch swatch-image"></span>指摘した画像</li>
+        </ul>
       </section>
     </main>
 

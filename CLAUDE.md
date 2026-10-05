@@ -38,7 +38,10 @@
 - `src/core/pdfLoad.ts` — PDF を編集用に読み込む唯一の入口(HC-4 のガード)
 - `src/security/csp.ts` — CSP の単一ソース(HC-1/2/3 のガード)
 - `src/render/pdfjs.ts` — pdf.js による描画。ワーカーは blob: 経由で生成して CSP を継承させる
-- `src/app/` — 画面と操作
+- `src/pdf/lexer.ts` — コンテンツストリームの解析器(入稿チェックと誤植修正で使う)
+- `src/print/` — 入稿チェック。`profiles.ts`(印刷所ごとの値)と `thresholds.ts`(共通の閾値)が単一ソース
+- `src/app/` — 画面と操作(`app.ts` が編集画面、`checkView.ts` が入稿チェック画面)
+- `scripts/inspect-pdf.mjs` — PDF の構造を調べる開発用ツール
 
 ## 進め方
 
@@ -46,3 +49,4 @@
 - 未決定事項は勝手に埋めず、Decision Log の UNDECIDED に置く。
 - 非対応は理由コードで明示する(沈黙の失敗や回避ハックはしない)。
 - 処理ロジックは UI から切り離した純粋関数にし、テスト可能に保つ。
+- 利用者の実ファイル(個人情報を含みうる)はリポジトリに入れない。テストは合成 PDF で行う(D-019)。

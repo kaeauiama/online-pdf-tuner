@@ -12,38 +12,27 @@ import {
 } from '../core/pageList.ts';
 import { loadPdfForEdit } from '../core/pdfLoad.ts';
 import { groupLabel, planSplit, type SplitPlan } from '../core/ranges.ts';
-import { REASONS, ReasonError, type ReasonCode } from '../core/reasons.ts';
+import { REASONS } from '../core/reasons.ts';
+import { setupCheckView } from './checkView.ts';
 import { downloadBytes } from './download.ts';
 import { Store } from './store.ts';
 import { Thumbnails } from './thumbnails.ts';
+import { $, createUi, el } from './ui.ts';
 
 const PAGE_DRAG_TYPE = 'application/x-pdf-page-keys';
 
-function $<T extends Element>(selector: string): T {
-  const el = document.querySelector<T>(selector);
-  if (!el) throw new Error(`missing element: ${selector}`);
-  return el;
-}
-
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
+export type Mode = 'edit' | 'check';
 
 export function startApp(): void {
   const store = new Store();
   const thumbs = new Thumbnails(store);
+  const { toast, toastReason, run } = createUi();
 
   const grid = $<HTMLOListElement>('#grid');
   const filesBar = $<HTMLElement>('#files');
   const fileInput = $<HTMLInputElement>('#file-input');
   const selectionCount = $<HTMLElement>('#selection-count');
   const dropOverlay = $<HTMLElement>('#drop-overlay');
-  const busy = $<HTMLElement>('#busy');
-  const busyText = $<HTMLElement>('#busy-text');
-  const toasts = $<HTMLElement>('#toasts');
   const splitDialog = $<HTMLDialogElement>('#split-dialog');
   const splitForm = $<HTMLFormElement>('#split-form');
   const splitError = $<HTMLElement>('#split-error');
@@ -150,50 +139,21 @@ export function startApp(): void {
     );
   }
 
-  // ---------- 通知・処理中表示 ----------
+  // ---------- 画面の切り替え ----------
 
-  function toast(message: string, kind: 'info' | 'error' = 'info', code?: string): void {
-    const item = el('div', `toast toast-${kind}`);
-    item.setAttribute('role', kind === 'error' ? 'alert' : 'status');
-    const text = el('p', 'toast-text', message);
-    item.append(text);
-    if (code) item.append(el('p', 'toast-code', code));
-    const close = el('button', 'toast-close', '×');
-    close.type = 'button';
-    close.setAttribute('aria-label', '閉じる');
-    close.addEventListener('click', () => item.remove());
-    item.append(close);
-    toasts.append(item);
-    setTimeout(() => item.remove(), kind === 'error' ? 12_000 : 5_000);
-  }
-
-  function toastReason(code: ReasonCode, detail?: string): void {
-    const message = detail ? `${detail}: ${REASONS[code].message}` : REASONS[code].message;
-    toast(message, 'error', code);
-  }
-
-  /** 重い処理の前に「処理中」を表示し、描画の機会を与えてから実行する */
-  async function run(label: string, task: (progress: (text: string) => void) => Promise<void>): Promise<void> {
-    busyText.textContent = label;
-    busy.hidden = false;
-    // 表示を描画させてから重い処理に入る。タブが裏にあると requestAnimationFrame が呼ばれないため、
-    // タイマーとの早い方で先へ進む(裏のタブでも処理が止まらないように)
-    await new Promise<void>((resolve) => {
-      requestAnimationFrame(() => setTimeout(resolve, 0));
-      setTimeout(resolve, 50);
-    });
-    try {
-      await task((text) => (busyText.textContent = text));
-    } catch (e) {
-      if (e instanceof ReasonError) {
-        toastReason(e.code, e.detail);
-      } else {
-        console.error(e);
-        toast('予期しないエラーが発生しました。ファイルが特殊な形式の可能性があります。', 'error', 'UNEXPECTED_ERROR');
-      }
-    } finally {
-      busy.hidden = true;
+  function setMode(mode: Mode): void {
+    document.body.dataset.mode = mode;
+    for (const tab of document.querySelectorAll<HTMLButtonElement>('[data-mode-tab]')) {
+      const selected = tab.dataset.modeTab === mode;
+      tab.setAttribute('aria-selected', String(selected));
+      tab.tabIndex = selected ? 0 : -1;
     }
+    $<HTMLElement>('#edit-view').hidden = mode !== 'edit';
+    $<HTMLElement>('#check-view').hidden = mode !== 'check';
+  }
+
+  for (const tab of document.querySelectorAll<HTMLButtonElement>('[data-mode-tab]')) {
+    tab.addEventListener('click', () => setMode(tab.dataset.modeTab as Mode));
   }
 
   // ---------- ファイルの追加 ----------
@@ -330,7 +290,9 @@ export function startApp(): void {
 
   document.addEventListener('keydown', (e) => {
     const target = e.target as Element;
-    if (target.closest('input[type="text"], input[type="number"], textarea, dialog')) return;
+    if (target.closest('input[type="text"], input[type="number"], textarea, select, dialog')) return;
+    // 入稿チェック画面では、ページを消すなどの編集ショートカットを無効にする
+    if (document.body.dataset.mode !== 'edit') return;
     const mod = e.ctrlKey || e.metaKey;
     if (mod && e.key.toLowerCase() === 'a' && store.pages.length > 0) {
       e.preventDefault();
@@ -467,6 +429,9 @@ export function startApp(): void {
 
   $<HTMLButtonElement>('#privacy-open').addEventListener('click', () => privacyDialog.showModal());
 
+  setupCheckView(store, { toast, toastReason, run }, () => setMode('edit'));
+
   store.subscribe(render);
+  setMode('edit');
   render();
 }

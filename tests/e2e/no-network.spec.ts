@@ -28,6 +28,10 @@ test('一連の操作の間、外部オリジンへのリクエストが 0 件�
   await Promise.all([page.waitForEvent('download'), page.click('[data-action="save-all"]')]);
   await page.click('[data-action="open-split"]');
   await Promise.all([page.waitForEvent('download'), page.click('#split-form button[type="submit"]')]);
+  // 入稿チェック(pdf.js による文字の解析と描画を含む)
+  await page.click('[data-mode-tab="check"]');
+  await page.click('#check-form button[type="submit"]');
+  await expect(page.locator('.check-summary')).toBeVisible();
 
   expect(external).toEqual([]);
   expect(await page.evaluate(() => (window as unknown as { __csp: string[] }).__csp)).toEqual([]);
