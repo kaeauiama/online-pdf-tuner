@@ -1407,3 +1407,69 @@ svg {
   font-weight: 400;
   color: var(--text-2);
 }
+
+/* ---------- ページ番号・文字入れ・画像(M5) ---------- */
+
+.write-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.write-fields {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.write-fields .field select,
+.write-fields textarea {
+  width: 100%;
+}
+
+.write-fields textarea {
+  height: auto;
+  padding: 6px 8px;
+  resize: vertical;
+}
+
+.field-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.field-radios {
+  border: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.write-fields .hint {
+  margin: -6px 0 0;
+}
+
+.write-preview-box {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 6px;
+  padding: 10px;
+  background: var(--surface-2);
+  border-radius: 8px;
+}
+
+.write-preview {
+  background: #fff;
+  box-shadow: var(--shadow);
+}
+
+@media (max-width: 720px) {
+  .write-grid {
+    grid-template-columns: 1fr;
+  }
+}

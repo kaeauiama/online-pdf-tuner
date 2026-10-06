@@ -61,12 +61,18 @@ export class Store {
       this.sources.set(id, { ...old, id, bytes });
       idMap.set(oldId, id);
     }
-    this.commit(
-      this.pages.map((p) => {
-        const id = idMap.get(p.sourceId);
-        return id ? { ...p, sourceId: id, key: `${id}:${p.pageIndex}` } : p;
-      }),
-    );
+    // 選択中のページは、新しい版でも選択したままにする
+    const keyMap = new Map<string, string>();
+    const next = this.pages.map((p) => {
+      const id = idMap.get(p.sourceId);
+      if (!id) return p;
+      const key = `${id}:${p.pageIndex}`;
+      keyMap.set(p.key, key);
+      return { ...p, sourceId: id, key };
+    });
+    this.selection = new Set([...this.selection].map((k) => keyMap.get(k) ?? k));
+    if (this.anchor) this.anchor = keyMap.get(this.anchor) ?? this.anchor;
+    this.commit(next);
   }
 
   /** ページの並びを変更する(履歴に積む) */

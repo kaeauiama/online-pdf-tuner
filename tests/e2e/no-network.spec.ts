@@ -36,6 +36,10 @@ test('一連の操作の間、外部オリジンへのリクエストが 0 件�
   // 2. 入稿: A5 の PDF でチェック(文字の解析・描画・くすみ判定)→ 入稿用 PDF(トンボ付き)を作って保存
   await page.goto('/');
   await addPdfs(page, [{ name: 'a5.pdf', buffer: await makeA5() }]);
+  // ページ番号(日本語フォントと fontkit の読み込みを含む)
+  await page.click('[data-action="open-numbers"]');
+  await page.click('#number-form button[type="submit"]');
+  await expect(page.locator('.toast')).toContainText('ページ番号を入れました');
   await page.click('[data-mode-tab="check"]');
   await page.click('#check-form button[type="submit"]');
   await expect(page.locator('.check-summary')).toBeVisible();

@@ -41,9 +41,9 @@
         <div class="tool-group">
           <label class="btn btn-primary" for="file-input">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
-            PDF を追加
+            PDF・画像を追加
           </label>
-          <input id="file-input" type="file" accept="application/pdf,.pdf" multiple hidden />
+          <input id="file-input" type="file" accept="application/pdf,.pdf,image/jpeg,image/png,image/webp,image/gif,image/bmp" multiple hidden />
         </div>
 
         <div class="tool-group" role="group" aria-label="選択">
@@ -79,7 +79,9 @@
           </button>
         </div>
 
-        <div class="tool-group" role="group" aria-label="文字">
+        <div class="tool-group" role="group" aria-label="書き込み">
+          <button type="button" class="btn" data-action="open-numbers" title="ページ番号を入れます">ページ番号…</button>
+          <button type="button" class="btn" data-action="open-text" title="ページに文字を入れます">文字を入れる…</button>
           <button type="button" class="btn" data-action="open-typo" title="PDF の中の文字を、同じ字数の別の字に置き換えます(試験的)">
             誤植を直す<span class="beta-tag">試験的</span>
           </button>
@@ -90,6 +92,7 @@
         <div class="tool-group" role="group" aria-label="保存">
           <button type="button" class="btn" data-action="save-selected">選択ページを保存</button>
           <button type="button" class="btn" data-action="open-split">分割して保存…</button>
+          <button type="button" class="btn" data-action="open-export-images">画像で保存…</button>
           <button type="button" class="btn btn-primary" data-action="save-all">1 つの PDF に保存</button>
         </div>
       </section>
@@ -102,7 +105,7 @@
             <path d="M12 16V4M7 9l5-5 5 5" />
             <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
           </svg>
-          <p class="dropzone-title">PDF をここにドラッグ&ドロップ</p>
+          <p class="dropzone-title">PDF・画像をここにドラッグ&ドロップ</p>
           <p class="dropzone-sub">または <label for="file-input" class="link">ファイルを選択</label>(複数可)</p>
           <p class="dropzone-note">ファイルはインターネットに送信されません。</p>
         </div>
@@ -167,7 +170,7 @@
     </main>
 
     <div class="drop-overlay" id="drop-overlay" hidden>
-      <p>ドロップして PDF を追加</p>
+      <p>ドロップして追加(PDF・画像)</p>
     </div>
 
     <div class="busy" id="busy" hidden>
@@ -207,6 +210,144 @@
         <div class="dialog-actions">
           <button type="button" class="btn" value="cancel" data-close>キャンセル</button>
           <button type="submit" class="btn btn-primary" value="ok">分割して保存</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="number-dialog" class="dialog dialog-wide">
+      <form id="number-form" class="write-form">
+        <h2>ページ番号を入れる</h2>
+        <p class="dialog-lead">いま並んでいる順番で番号を入れます。文字は印刷向けの色(CMYK)で、日本語フォント(BIZ UDPゴシック)を埋め込みます。</p>
+        <div class="write-grid">
+          <div class="write-fields">
+            <label class="field"><span class="field-label">位置</span>
+              <select name="position">
+                <option value="bottom-center">下中央</option>
+                <option value="bottom-right">右下</option>
+                <option value="bottom-left">左下</option>
+                <option value="outside">下の外側(冊子向け: 奇数ページは右、偶数ページは左)</option>
+                <option value="top-center">上中央</option>
+                <option value="top-right">右上</option>
+                <option value="top-left">左上</option>
+              </select>
+            </label>
+            <label class="field"><span class="field-label">書式</span><select name="format"></select></label>
+            <div class="field-row">
+              <label class="field"><span class="field-label">開始番号</span><input name="start" type="number" value="1" class="input-num" /></label>
+              <label class="field"><span class="field-label">先頭から番号を入れないページ</span><input name="skip" type="number" value="0" min="0" class="input-num" /></label>
+            </div>
+            <p class="hint">表紙に番号を入れないなら「1」にします。</p>
+            <div class="field-row">
+              <label class="field"><span class="field-label">大きさ(pt)</span><input name="size" type="number" value="10" min="1" max="72" step="0.5" class="input-num" /></label>
+              <label class="field"><span class="field-label">端からの距離(mm)</span><input name="margin" type="number" value="8" min="0" max="50" step="0.5" class="input-num" /></label>
+            </div>
+            <p class="hint">印刷所に出すときは、安全領域(仕上がりの端から 3〜5mm)より内側にしてください。</p>
+            <div class="field-row">
+              <label class="field"><span class="field-label">色</span><select name="color"></select></label>
+              <label class="checkbox-line"><input type="checkbox" name="bold" /> 太字</label>
+            </div>
+          </div>
+          <div class="write-preview-box"><canvas class="write-preview"></canvas><p class="hint">最初の対象ページの見本</p></div>
+        </div>
+        <p class="form-error" role="alert"></p>
+        <div class="dialog-actions">
+          <button type="button" class="btn" data-close>キャンセル</button>
+          <button type="submit" class="btn btn-primary">ページ番号を入れる</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="text-dialog" class="dialog dialog-wide">
+      <form id="text-form" class="write-form">
+        <h2>文字を入れる</h2>
+        <p class="dialog-lead">ページに文字を入れます。{page} はページ番号、{total} は全ページ数に置き換わります。</p>
+        <div class="write-grid">
+          <div class="write-fields">
+            <label class="field"><span class="field-label">入れる文字</span><textarea name="text" rows="3" class="input-text">見本</textarea></label>
+            <label class="field"><span class="field-label">位置</span>
+              <select name="anchor">
+                <option value="top-left">左上</option>
+                <option value="top-center">上中央</option>
+                <option value="top-right" selected>右上</option>
+                <option value="middle-left">左中央</option>
+                <option value="center">中央</option>
+                <option value="middle-right">右中央</option>
+                <option value="bottom-left">左下</option>
+                <option value="bottom-center">下中央</option>
+                <option value="bottom-right">右下</option>
+              </select>
+            </label>
+            <div class="field-row">
+              <label class="field"><span class="field-label">左右の端から(mm)</span><input name="marginX" type="number" value="10" step="0.5" class="input-num" /></label>
+              <label class="field"><span class="field-label">上下の端から(mm)</span><input name="marginY" type="number" value="10" step="0.5" class="input-num" /></label>
+            </div>
+            <p class="hint">中央寄せの位置では、中央からのずれになります。</p>
+            <div class="field-row">
+              <label class="field"><span class="field-label">大きさ(pt)</span><input name="size" type="number" value="24" min="1" max="200" step="0.5" class="input-num" /></label>
+              <label class="field"><span class="field-label">色</span><select name="color"></select></label>
+              <label class="checkbox-line"><input type="checkbox" name="bold" checked /> 太字</label>
+            </div>
+            <fieldset class="field-radios">
+              <legend class="field-label">入れるページ</legend>
+              <label class="radio"><input type="radio" name="target" value="all" checked /> すべてのページ</label>
+              <label class="radio"><input type="radio" name="target" value="selected" /> 選択中のページだけ</label>
+            </fieldset>
+          </div>
+          <div class="write-preview-box"><canvas class="write-preview"></canvas><p class="hint">最初の対象ページの見本</p></div>
+        </div>
+        <p class="form-error" role="alert"></p>
+        <div class="dialog-actions">
+          <button type="button" class="btn" data-close>キャンセル</button>
+          <button type="submit" class="btn btn-primary">文字を入れる</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="image-import-dialog" class="dialog">
+      <form id="image-import-form">
+        <h2>画像を PDF にする</h2>
+        <p class="dialog-lead" id="image-import-lead"></p>
+        <fieldset>
+          <legend>ページの大きさ</legend>
+          <label class="radio"><input type="radio" name="pageSize" value="a4" checked /> A4 に収める(向きは画像に合わせる)</label>
+          <label class="radio"><input type="radio" name="pageSize" value="image" /> 画像の大きさ(画素数を 350ppi とみなす)</label>
+        </fieldset>
+        <fieldset>
+          <legend>余白</legend>
+          <label class="radio"><input type="radio" name="margin" value="0" checked /> なし</label>
+          <label class="radio"><input type="radio" name="margin" value="10" /> 10mm</label>
+        </fieldset>
+        <div class="dialog-actions">
+          <button type="button" class="btn" data-close>読み込まない</button>
+          <button type="submit" class="btn btn-primary">PDF にして追加</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="image-export-dialog" class="dialog">
+      <form id="image-export-form">
+        <h2>画像で保存</h2>
+        <p class="dialog-lead">ページを画像にして保存します。複数のページは ZIP にまとめます。</p>
+        <fieldset>
+          <legend>対象</legend>
+          <label class="radio"><input type="radio" name="target" value="all" checked /> すべてのページ</label>
+          <label class="radio"><input type="radio" name="target" value="selected" /> 選択中のページだけ</label>
+        </fieldset>
+        <fieldset>
+          <legend>形式</legend>
+          <label class="radio"><input type="radio" name="format" value="png" checked /> PNG(文字や図がくっきり)</label>
+          <label class="radio"><input type="radio" name="format" value="jpeg" /> JPEG(写真向き・ファイルが小さい)</label>
+        </fieldset>
+        <fieldset>
+          <legend>解像度</legend>
+          <label class="radio"><input type="radio" name="dpi" value="150" /> 150ppi(画面・メール向け)</label>
+          <label class="radio"><input type="radio" name="dpi" value="300" checked /> 300ppi(印刷向け)</label>
+          <label class="radio"><input type="radio" name="dpi" value="600" /> 600ppi(細かい図)</label>
+        </fieldset>
+        <p class="form-error" id="image-export-error" role="alert"></p>
+        <div class="dialog-actions">
+          <button type="button" class="btn" data-close>キャンセル</button>
+          <button type="submit" class="btn btn-primary">保存</button>
         </div>
       </form>
     </dialog>

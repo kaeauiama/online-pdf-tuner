@@ -17,7 +17,10 @@ import { setupCheckView } from './checkView.ts';
 import { downloadBytes } from './download.ts';
 import { Store } from './store.ts';
 import { Thumbnails } from './thumbnails.ts';
+import { imagesToPdf } from '../core/images.ts';
+import { decodeImage, isImageFile, setupImageExport, setupImageImport } from './imageDialogs.ts';
 import { setupPwa } from './pwa.ts';
+import { setupWriteDialogs } from './writeDialogs.ts';
 import { setupTypoDialog } from './typoDialog.ts';
 import { $, createUi, el } from './ui.ts';
 
@@ -29,6 +32,7 @@ export function startApp(): void {
   const store = new Store();
   const thumbs = new Thumbnails(store);
   const { toast, toastReason, run } = createUi();
+  const chooseImageOptions = setupImageImport();
 
   const grid = $<HTMLOListElement>('#grid');
   const filesBar = $<HTMLElement>('#files');
@@ -78,6 +82,9 @@ export function startApp(): void {
     setEnabled('save-all', hasPages);
     setEnabled('open-split', hasPages);
     setEnabled('open-typo', hasPages);
+    setEnabled('open-numbers', hasPages);
+    setEnabled('open-text', hasPages);
+    setEnabled('open-export-images', hasPages);
   }
 
   function setEnabled(action: string, enabled: boolean): void {
@@ -163,8 +170,29 @@ export function startApp(): void {
 
   async function addFiles(files: readonly File[]): Promise<void> {
     const pdfs = files.filter((f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
-    const skipped = files.length - pdfs.length;
-    if (skipped > 0) toast(`PDF 以外のファイル ${skipped} 件は読み込みませんでした。`);
+    const images = files.filter((f) => !pdfs.includes(f) && isImageFile(f));
+    const skipped = files.length - pdfs.length - images.length;
+    if (skipped > 0) toast(`PDF・画像以外のファイル ${skipped} 件は読み込みませんでした。`);
+
+    if (images.length > 0) {
+      const options = await chooseImageOptions(images.length);
+      if (options) {
+        await run('画像を PDF にしています…', async () => {
+          const decoded = [];
+          for (const file of images) {
+            try {
+              decoded.push(await decodeImage(file));
+            } catch {
+              toast(`「${file.name}」は画像として読み込めませんでした。`, 'error');
+            }
+          }
+          if (decoded.length === 0) return;
+          const bytes = await imagesToPdf(decoded, options);
+          const first = images[0].name.replace(/\.[^.]+$/, '');
+          store.addSource(images.length > 1 ? `${first} ほか${images.length - 1}枚.pdf` : `${first}.pdf`, bytes, decoded.length);
+        });
+      }
+    }
     if (pdfs.length === 0) return;
 
     await run('読み込んでいます…', async (progress) => {
@@ -434,6 +462,8 @@ export function startApp(): void {
 
   setupCheckView(store, { toast, toastReason, run }, () => setMode('edit'));
   setupTypoDialog(store, { toast, toastReason, run });
+  setupWriteDialogs(store, { toast, toastReason, run });
+  setupImageExport(store, { toast, toastReason, run });
   setupPwa({ toast, toastReason, run }, addFiles);
 
   store.subscribe(render);
