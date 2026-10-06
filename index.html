@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="referrer" content="no-referrer" />
-    <meta name="theme-color" content="#1f5fbf" />
+    <meta name="theme-color" content="#222224" />
     <title>PDF 作業台</title>
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
@@ -13,17 +13,14 @@
   <body>
     <header class="app-header">
       <div class="brand">
-        <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M6 2h8l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z" />
-          <path d="M14 2v5h5" />
-        </svg>
+        <span class="brand-cmyk" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
         <span class="brand-name">PDF 作業台</span>
         <span class="brand-tag">仮称</span>
       </div>
       <nav class="mode-tabs" role="tablist" aria-label="画面の切り替え">
-        <button type="button" role="tab" class="mode-tab" data-mode-tab="edit" aria-controls="edit-view" title="ページの編集 (Alt+1)" aria-keyshortcuts="Alt+1">ページの編集</button>
-        <button type="button" role="tab" class="mode-tab" data-mode-tab="editor" aria-controls="editor-view" title="ページの中 (Alt+2)" aria-keyshortcuts="Alt+2">ページの中</button>
-        <button type="button" role="tab" class="mode-tab" data-mode-tab="check" aria-controls="check-view" title="入稿チェック (Alt+3)" aria-keyshortcuts="Alt+3">入稿チェック</button>
+        <button type="button" role="tab" class="mode-tab" data-mode-tab="edit" data-key="Alt+1" aria-controls="edit-view" title="ページの編集 (Alt+1)" aria-keyshortcuts="Alt+1">ページの編集</button>
+        <button type="button" role="tab" class="mode-tab" data-mode-tab="editor" data-key="Alt+2" aria-controls="editor-view" title="ページの中 (Alt+2)" aria-keyshortcuts="Alt+2">ページの中</button>
+        <button type="button" role="tab" class="mode-tab" data-mode-tab="check" data-key="Alt+3" aria-controls="check-view" title="入稿チェック (Alt+3)" aria-keyshortcuts="Alt+3">入稿チェック</button>
       </nav>
       <button type="button" class="btn install-button" id="install-app" hidden title="インストールすると、オフラインでも使え、PDF を「プログラムから開く」で開けます">
         アプリとして使う
@@ -50,7 +47,6 @@
         <div class="tool-group" role="group" aria-label="選択">
           <button type="button" class="btn" data-action="select-all" title="すべて選択 (Ctrl+A)">すべて選択</button>
           <button type="button" class="btn" data-action="select-none" title="選択を解除 (Esc)">選択解除</button>
-          <span class="selection-count" id="selection-count" aria-live="polite"></span>
         </div>
 
         <div class="tool-group" role="group" aria-label="選択したページの編集">
@@ -106,6 +102,7 @@
           <input type="number" class="input-num" id="page-jump" min="1" inputmode="numeric" aria-label="移動するページの番号" />
           <span class="view-total" id="page-total"></span>
         </label>
+        <span class="selection-count" id="selection-count" aria-live="polite"></span>
         <div class="view-size" role="radiogroup" aria-label="サムネイルの大きさ">
           <label><input type="radio" name="thumb-size" value="normal" checked /><span>標準</span></label>
           <label><input type="radio" name="thumb-size" value="small" /><span>小</span></label>

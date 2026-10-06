@@ -360,7 +360,7 @@ export function setupEditorView(store: Store, ui: Ui): EditorView {
     const pdfPage = await doc.getPage(1);
     const rotation = normalizeRotation(pdfPage.rotate + s.ref.rotation);
     const base = pdfPage.getViewport({ scale: 1, rotation });
-    const maxW = Math.max(240, stage.clientWidth - 32);
+    const maxW = Math.max(240, stage.clientWidth - 64);
     const maxH = Math.max(320, window.innerHeight - 200);
     const scale = Math.min(maxW / base.width, maxH / base.height) * ratio();
     const vp = pdfPage.getViewport({ scale, rotation });
@@ -414,15 +414,15 @@ export function setupEditorView(store: Store, ui: Ui): EditorView {
       ctx.strokeRect(v.x, v.y, v.w, v.h);
       return v;
     };
-    for (const e of session.elements) if (e.effectOf === selected) box(e, '#7c4dff', [5, 3]);
-    const v = box(sel, sel.movable ? '#1f5fbf' : '#b3261e', []);
+    for (const e of session.elements) if (e.effectOf === selected) box(e, '#b197fc', [5, 3]);
+    const v = box(sel, sel.movable ? '#34c6ea' : '#ff5aa8', []);
     ctx.setLineDash([]);
     if (!canResize(sel)) return;
     // 四隅の取っ手(つまんで大きさを変える)
     const size = HANDLE_PX * r;
     for (const [x, y] of cornersOf(v)) {
       ctx.fillStyle = '#ffffff';
-      ctx.strokeStyle = '#1f5fbf';
+      ctx.strokeStyle = '#34c6ea';
       ctx.lineWidth = 1.5 * r;
       ctx.fillRect(x - size / 2, y - size / 2, size, size);
       ctx.strokeRect(x - size / 2, y - size / 2, size, size);
@@ -460,8 +460,11 @@ export function setupEditorView(store: Store, ui: Ui): EditorView {
     const row = (e: PageElement, nested: boolean): HTMLLIElement => {
       const li = el('li', `layer-row${nested ? ' is-nested' : ''}${e.id === selected ? ' is-selected' : ''}`);
       li.dataset.id = String(e.id);
-      const eye = el('button', 'layer-eye', hidden.has(e.id) ? '○' : '●');
+      const eye = el('button', hidden.has(e.id) ? 'layer-eye is-off' : 'layer-eye');
       eye.type = 'button';
+      eye.innerHTML = hidden.has(e.id)
+        ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.1A10 10 0 0 1 12 6c6.5 0 10 6 10 6a17 17 0 0 1-3.2 3.8M6.6 6.6C3.9 8.3 2 12 2 12s3.5 6 10 6c1.6 0 3-.4 4.3-1"/></svg>'
+        : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/></svg>';
       eye.title = hidden.has(e.id) ? 'プレビューで表示する' : 'プレビューで一時的に隠す(保存には影響しません)';
       eye.setAttribute('aria-label', eye.title);
       eye.addEventListener('click', (ev) => {
@@ -934,6 +937,15 @@ export function setupEditorView(store: Store, ui: Ui): EditorView {
   });
   discardButton.addEventListener('click', () => discard());
   showHidden.addEventListener('change', renderLayers);
+
+  // 窓の大きさが変わったら、プレビューを描き直す(少し待ってから 1 回だけ)
+  let resizeTimer: ReturnType<typeof setTimeout> | undefined;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      if (document.body.dataset.mode === 'editor' && session) void renderPreview();
+    }, 200);
+  });
 
   applyButton.addEventListener('click', () => void applyChanges());
 

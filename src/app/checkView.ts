@@ -43,14 +43,14 @@ const METHOD_LABEL: Record<BleedMethod | 'existing', string> = {
 
 // プレビューの重ね描きの色(凡例と合わせる)
 const COLORS = {
-  cut: 'rgba(20, 24, 32, 0.38)',
-  trim: '#e0245e',
-  bleed: '#2f6fd6',
-  safe: '#1e9e5a',
-  text: '#f08c00',
-  image: '#7c4dff',
-  object: '#d6336c',
-  area: '#0b7285',
+  cut: 'rgba(0, 0, 0, 0.45)',
+  trim: '#ff5aa8',
+  bleed: '#34c6ea',
+  safe: '#f2d33c',
+  text: '#ffa94d',
+  image: '#b197fc',
+  object: '#ff8cc2',
+  area: '#5fd4f0',
   /** 選んだ場所以外を暗くする色 */
   spotlight: 'rgba(16, 20, 28, 0.55)',
 };
@@ -868,6 +868,15 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
     radio.addEventListener('change', () => void renderPreview());
   }
 
+  // 窓の大きさが変わったら、プレビューを描き直す(少し待ってから 1 回だけ)
+  let resizeTimer: ReturnType<typeof setTimeout> | undefined;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      if (document.body.dataset.mode === 'check' && current()) void renderPreview();
+    }, 200);
+  });
+
   async function renderPreview(): Promise<void> {
     const analysis = current();
     if (!analysis) return;
@@ -892,8 +901,13 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
     let region = { x: 0, y: 0, w: base.width, h: base.height };
     if (zoomed && focusMarkHere) {
       const r = toViewportRect(base, focusMarkHere.rect);
-      const w = Math.min(base.width, Math.max(r.w * 3, mmToPt(ZOOM_MIN_WIDTH_MM)));
-      const h = Math.min(base.height, Math.max(r.h * 3, mmToPt(ZOOM_MIN_HEIGHT_MM)));
+      let w = Math.max(r.w * 3, mmToPt(ZOOM_MIN_WIDTH_MM));
+      let h = Math.max(r.h * 3, mmToPt(ZOOM_MIN_HEIGHT_MM));
+      const aspect = maxW / maxH;
+      if (w / h > aspect) h = w / aspect;
+      else w = h * aspect;
+      w = Math.min(base.width, w);
+      h = Math.min(base.height, h);
       const x = Math.min(Math.max(0, r.x + r.w / 2 - w / 2), base.width - w);
       const y = Math.min(Math.max(0, r.y + r.h / 2 - h / 2), base.height - h);
       region = { x, y, w, h };
@@ -952,8 +966,10 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
 
     ctx.lineWidth = 1.5 * ratio;
     if (bleed.w < page_.w - 1 || bleed.h < page_.h - 1) {
+      ctx.setLineDash([4 * ratio, 3 * ratio]);
       ctx.strokeStyle = COLORS.bleed;
       ctx.strokeRect(bleed.x, bleed.y, bleed.w, bleed.h);
+      ctx.setLineDash([]);
     }
     ctx.strokeStyle = COLORS.trim;
     ctx.strokeRect(trim.x, trim.y, trim.w, trim.h);
