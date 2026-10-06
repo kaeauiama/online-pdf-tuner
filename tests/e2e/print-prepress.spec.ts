@@ -157,3 +157,15 @@ test('CMYK 変換: JPEG の写真も CMYK の画像にする。変換できな�
     expect(s.images.every((img) => img.color !== 'rgb')).toBe(true);
   }
 });
+
+test('はじめから CMYK の PDF: くすみ警告を出さず、「すでに CMYK」と示す', async ({ page }) => {
+  const doc = await PDFDocument.create();
+  const p = doc.addPage([W, H]);
+  const content = 'q 1 0 0 0 k 30 420 110 110 re f Q q 0 1 0 0 k 155 420 110 110 re f Q q 0 0 1 0 k 280 420 110 110 re f Q q 1 1 0 0 k 30 290 110 110 re f Q q 0 1 1 0 k 155 290 110 110 re f Q';
+  p.node.set(PDFName.of('Contents'), doc.context.register(doc.context.flateStream(new TextEncoder().encode(content))));
+  await page.goto('/');
+  await addPdfs(page, [{ name: 'cmyk.pdf', buffer: Buffer.from(await doc.save()) }]);
+  await check(page);
+  expect(await codes(page)).not.toContain('PRINT_COLOR_DULL');
+  await expect(page.locator('#color-fieldset')).toContainText('すでに CMYK です');
+});

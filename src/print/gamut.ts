@@ -87,8 +87,27 @@ export interface GamutStats {
   readonly strong: number;
 }
 
-/** RGBA の画素(左上原点)のうち、region の内側を調べる */
-export function measureGamut(data: Uint8ClampedArray, width: number, height: number, region?: Rect): GamutStats {
+/**
+ * 調べる画素を絞る印(1 = 調べる)。RGB で描いた範囲を、描画の画素の座標で塗ったもの。
+ * undefined ならすべての画素を調べる
+ */
+export type GamutMask = Uint8Array | undefined;
+
+/** 画素の座標の矩形の一覧から、印を作る */
+export function maskFromRects(width: number, height: number, rects: readonly Rect[]): Uint8Array {
+  const mask = new Uint8Array(width * height);
+  for (const r of rects) {
+    const x0 = Math.max(0, Math.floor(Math.min(r.x0, r.x1)));
+    const x1 = Math.min(width, Math.ceil(Math.max(r.x0, r.x1)));
+    const y0 = Math.max(0, Math.floor(Math.min(r.y0, r.y1)));
+    const y1 = Math.min(height, Math.ceil(Math.max(r.y0, r.y1)));
+    for (let y = y0; y < y1; y++) mask.fill(1, y * width + x0, y * width + x1);
+  }
+  return mask;
+}
+
+/** RGBA の画素(左上原点)のうち、region の内側(mask があれば、さらにその印の付いた所)を調べる */
+export function measureGamut(data: Uint8ClampedArray, width: number, height: number, region?: Rect, mask?: GamutMask): GamutStats {
   const x0 = Math.max(0, Math.floor(region?.x0 ?? 0));
   const y0 = Math.max(0, Math.floor(region?.y0 ?? 0));
   const x1 = Math.min(width, Math.ceil(region?.x1 ?? width));
@@ -99,6 +118,7 @@ export function measureGamut(data: Uint8ClampedArray, width: number, height: num
   let strong = 0;
   for (let y = y0; y < y1; y++) {
     for (let x = x0; x < x1; x++) {
+      if (mask && !mask[y * width + x]) continue;
       const i = (y * width + x) * 4;
       if (data[i + 3] < 16) continue;
       pixels++;
@@ -116,10 +136,11 @@ export function measureGamut(data: Uint8ClampedArray, width: number, height: num
 }
 
 /** 印刷のおおよその見え方: 出せない彩度を、明度と色相を保ったまま範囲内に寄せる(目安) */
-export function simulatePrint(data: Uint8ClampedArray): Uint8ClampedArray<ArrayBuffer> {
+export function simulatePrint(data: Uint8ClampedArray, mask?: GamutMask): Uint8ClampedArray<ArrayBuffer> {
   const out = new Uint8ClampedArray(data);
   const cache = new Map<number, number>();
   for (let i = 0; i < out.length; i += 4) {
+    if (mask && !mask[i >> 2]) continue;
     const key = (out[i] << 16) | (out[i + 1] << 8) | out[i + 2];
     let packed = cache.get(key);
     if (packed === undefined) {
@@ -145,15 +166,17 @@ export function simulatePrint(data: Uint8ClampedArray): Uint8ClampedArray<ArrayB
 }
 
 /** くすみやすい所の表示: 範囲内の色は薄い灰色にし、くすみやすい色だけを元の色で残す */
-export function highlightOutOfGamut(data: Uint8ClampedArray): Uint8ClampedArray<ArrayBuffer> {
+export function highlightOutOfGamut(data: Uint8ClampedArray, mask?: GamutMask): Uint8ClampedArray<ArrayBuffer> {
   const out = new Uint8ClampedArray(data);
   const cache = new Map<number, number>();
   for (let i = 0; i < out.length; i += 4) {
     const key = (out[i] << 16) | (out[i + 1] << 8) | out[i + 2];
-    let excess = cache.get(key);
-    if (excess === undefined) {
-      excess = chromaExcess(out[i], out[i + 1], out[i + 2]);
-      cache.set(key, excess);
+    let excess = 0;
+    // CMYK で描いた所(印の付いていない所)は、くすむ色として残さない
+    if (!mask || mask[i >> 2]) {
+      const cached = cache.get(key);
+      excess = cached ?? chromaExcess(out[i], out[i + 1], out[i + 2]);
+      if (cached === undefined) cache.set(key, excess);
     }
     if (excess >= GAMUT_MODERATE_DELTA_C) continue;
     const gray = Math.round(0.299 * out[i] + 0.587 * out[i + 1] + 0.114 * out[i + 2]);

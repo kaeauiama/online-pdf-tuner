@@ -12,7 +12,7 @@ import { CMYK_LUT_SOURCE } from '../print/cmykLut.ts';
 import { flattenPdf } from '../print/flattenRender.ts';
 import { outlineText, type OutlineKeptReason, type OutlinePageResult } from '../print/outline.ts';
 import { decodeJpegInBrowser } from '../render/jpeg.ts';
-import { highlightOutOfGamut, simulatePrint } from '../print/gamut.ts';
+import { highlightOutOfGamut, maskFromRects, simulatePrint } from '../print/gamut.ts';
 import { GAMUT_SOURCE } from '../print/gamutTable.ts';
 import { mmToPt, ptToMm, rectArea, rectHeight, rectWidth, type Rect } from '../print/geometry.ts';
 import type { PageLayout } from '../print/layout.ts';
@@ -552,18 +552,27 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
     );
     f.append(textSet);
 
-    // 色(D-035)
+    // 色(D-035)。RGB などの色を使っていなければ「すでに CMYK」と示す
+    const allCmyk = analysis.facts.every((x) => x.structure.colorUse.rgb === 0 && x.structure.rgbAreas !== 'all' && x.structure.rgbAreas.length === 0);
     const colorSet = el('fieldset', 'fix-fieldset');
     colorSet.id = 'color-fieldset';
     colorSet.append(
       el('legend', '', '色'),
-      radio('color', 'rgb', 'RGB のまま', '多くの印刷所はこのまま受け付け、印刷所で CMYK に変換します。', true),
+      radio(
+        'color',
+        'rgb',
+        '色を変えない(元の色のまま)',
+        allCmyk
+          ? 'この PDF の色は、すでに CMYK です。そのまま入稿できます。'
+          : 'RGB の色は RGB のまま、CMYK の色は CMYK のまま書き出します。多くの印刷所は RGB も受け付け、印刷所で CMYK に変換します。',
+        true,
+      ),
       radio('color', 'k100', '黒い文字と線を K100 にする(ほかの色はそのまま)', '黒やグレーの文字・線を K(黒インキ)だけの色にします。小さな文字が 4 色の版ズレでにじむのを防ぎます。', false),
       radio(
         'color',
         'cmyk',
         `CMYK に変換する(${CMYK_LUT_SOURCE})`,
-        'CMYK での入稿を求められたときに。プレビューの「印刷の目安」と同じ基準で変換します。黒やグレーの文字・線は K だけにします。写真などは CMYK の画像になり、ファイルが大きくなることがあります。',
+        'CMYK での入稿を求められたときに。RGB などの色だけを、プレビューの「印刷の目安」と同じ基準で変換します(すでに CMYK の色はそのまま)。黒やグレーの文字・線は K だけにします。写真などは CMYK の画像になり、ファイルが大きくなることがあります。',
         false,
       ),
     );
@@ -903,7 +912,20 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
     const mode = previewMode();
     if (mode !== 'normal') {
       const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const converted = mode === 'gamut' ? highlightOutOfGamut(image.data) : simulatePrint(image.data);
+      // RGB で描いた所だけを変える(CMYK の色は、印刷される色の指定そのもの)
+      const areas = analysis.facts[previewPage]?.structure.rgbAreas ?? 'all';
+      const mask =
+        areas === 'all'
+          ? undefined
+          : maskFromRects(
+              canvas.width,
+              canvas.height,
+              areas.map((r) => {
+                const v = toViewportRect(viewport, r);
+                return { x0: v.x - ox, y0: v.y - oy, x1: v.x - ox + v.w, y1: v.y - oy + v.h };
+              }),
+            );
+      const converted = mode === 'gamut' ? highlightOutOfGamut(image.data, mask) : simulatePrint(image.data, mask);
       ctx.putImageData(new ImageData(converted, image.width, image.height), 0, 0);
     }
     previewModeNote.textContent = MODE_NOTE[mode];

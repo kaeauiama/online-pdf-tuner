@@ -20,6 +20,7 @@ function page(wMm: number, hMm: number, extra: Partial<PageStructure> = {}): Pag
     fullyTransparent: false,
     notes: [],
     spotColors: [],
+    rgbAreas: [],
     ...extra,
   };
 }

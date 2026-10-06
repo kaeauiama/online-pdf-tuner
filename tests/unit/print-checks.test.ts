@@ -21,6 +21,7 @@ function structure(wMm: number, hMm: number, extra: Partial<PageStructure> = {})
     fullyTransparent: false,
     notes: [],
     spotColors: [],
+    rgbAreas: [],
     ...extra,
   };
 }

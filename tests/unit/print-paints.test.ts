@@ -165,3 +165,23 @@ q 0 g 150 50 50 50 re f Q`,
     expect(codesOf(doc)).toContain('PRINT_HIDDEN_LAYER');
   });
 });
+
+describe('RGB で描いた範囲(くすみ警告の対象)', () => {
+  it('RGB の塗りだけを記録し、CMYK・グレーは記録しない。RGB のグラデーションがあればページ全体', async () => {
+    const cmykOnly = await pageWith(() => 'q 1 0 0 0 k 10 10 50 50 re f Q q 0.5 g 100 10 50 50 re f Q');
+    expect(scanStructure(cmykOnly)[0].rgbAreas).toEqual([]);
+    const mixed = await pageWith(() => 'q 0 0 1 rg 10 10 50 50 re f Q q 0 1 0 0 k 100 10 50 50 re f Q');
+    const areas = scanStructure(mixed)[0].rgbAreas;
+    expect(areas).toHaveLength(1);
+    expect(areas !== 'all' && areas[0]).toMatchObject({ x0: 10, y0: 10, x1: 60, y1: 60 });
+    const shading = await pageWith(
+      () => '/Sh1 sh',
+      (d) => {
+        const sh = d.context.obj({});
+        sh.set(PDFName.of('Sh1'), d.context.register(d.context.obj({ ShadingType: 2, ColorSpace: 'DeviceRGB', Coords: [0, 0, 100, 0], Function: { FunctionType: 2, Domain: [0, 1], C0: [1, 0, 0], C1: [0, 0, 1], N: 1 } })));
+        d.getPage(0).node.Resources()!.set(PDFName.of('Shading'), sh);
+      },
+    );
+    expect(scanStructure(shading)[0].rgbAreas).toBe('all');
+  });
+});

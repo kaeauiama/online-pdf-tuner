@@ -82,3 +82,16 @@ describe('simulatePrint / highlightOutOfGamut', () => {
     expect(out[5]).toBe(out[6]);
   });
 });
+
+describe('くすみ警告: 調べる範囲の限定(CMYK の所は除く)', () => {
+  it('印の付いた画素だけを数え、プレビューの変換も印の所だけに行う', async () => {
+    const { measureGamut, maskFromRects, simulatePrint } = await import('../../src/print/gamut.ts');
+    // 2 × 1 画素の鮮やかな青。左だけを RGB の範囲とする
+    const data = new Uint8ClampedArray([0, 0, 255, 255, 0, 0, 255, 255]);
+    const mask = maskFromRects(2, 1, [{ x0: 0, y0: 0, x1: 1, y1: 1 }]);
+    expect(measureGamut(data, 2, 1, undefined, mask).pixels).toBe(1);
+    const out = simulatePrint(data, mask);
+    expect(Array.from(out.slice(4, 8))).toEqual([0, 0, 255, 255]);
+    expect(Array.from(out.slice(0, 4))).not.toEqual([0, 0, 255, 255]);
+  });
+});

@@ -106,6 +106,11 @@ export interface PageStructure {
   readonly notes: readonly PaintNote[];
   /** 使われている特色の名前(レジストレーションを除く) */
   readonly spotColors: readonly string[];
+  /**
+   * RGB(と Lab)の色で描いた範囲。くすみ警告はこの範囲だけを調べる(CMYK の色はインキの指定そのもので、
+   * 変換でくすむことはないため)。範囲を特定できない描画(グラデーションなど)があれば 'all'
+   */
+  readonly rgbAreas: readonly Rect[] | 'all';
 }
 
 const N = (s: string) => PDFName.of(s);
@@ -261,6 +266,7 @@ interface ScanState {
   /** 既定で非表示のレイヤー(OCG)の参照 */
   readonly hiddenGroups: ReadonlySet<string>;
   readonly fontCache: Map<string, { edit?: FontForEdit; info: FontInfo }>;
+  rgbAreas: Rect[] | 'all';
 }
 
 interface Gs {
@@ -292,6 +298,21 @@ const STROKE_MODES = new Set([1, 2, 5, 6]);
 const DESCENT = 0.15;
 const ASCENT = 0.85;
 const THIN_LINE_PT = mmToPt(THIN_LINE_MM);
+
+/** RGB の範囲の数の上限(超えたらページ全体を調べる) */
+const MAX_RGB_AREAS = 2000;
+
+/** 印刷の色を RGB で指定しているか(Lab と、元が RGB の Indexed を含む) */
+function isRgbSpace(space: ColorSpaceInfo): boolean {
+  const s = space.kind === 'indexed' && space.base ? space.base : space;
+  return s.kind === 'rgb' || s.kind === 'lab';
+}
+
+function addRgbArea(state: ScanState, bounds: Rect | 'all'): void {
+  if (state.rgbAreas === 'all') return;
+  if (bounds === 'all' || state.rgbAreas.length >= MAX_RGB_AREAS) state.rgbAreas = 'all';
+  else state.rgbAreas.push(bounds);
+}
 
 function addNote(state: ScanState, note: PaintNote): void {
   const n = state.noteCounts.get(note.kind) ?? 0;
@@ -403,6 +424,7 @@ function scanContent(state: ScanState, bytes: Uint8Array, resources: PDFDict | u
   /** 塗り・線の描画の共通の確認 */
   const checkPaint = (bounds: Rect, fill: boolean, stroke: boolean) => {
     if (hidden()) addNote(state, { kind: 'hidden-layer', bounds });
+    if ((fill && gs.fillAlpha > 0 && isRgbSpace(gs.fill.space)) || (stroke && gs.strokeAlpha > 0 && isRgbSpace(gs.stroke.space))) addRgbArea(state, bounds);
     if (fill && gs.fillAlpha > 0) {
       useColor(gs.fill);
       if (gs.overprintFill && isWhite(gs.fill)) addNote(state, { kind: 'white-overprint', bounds });
@@ -553,6 +575,7 @@ function scanContent(state: ScanState, bytes: Uint8Array, resources: PDFDict | u
         const space = resolveColorSpace(doc, shading?.get(N('ColorSpace')), resources);
         state.colorUse[space.family]++;
         useColor({ space, comps: [] });
+        if (isRgbSpace(space)) addRgbArea(state, 'all'); // グラデーションの範囲はクリップ次第で特定しにくい
         if (hidden()) addNote(state, { kind: 'hidden-layer', bounds: transformRect(gs.ctm, rect(0, 0, 0, 0)) });
         break;
       }
@@ -698,7 +721,9 @@ function scanContent(state: ScanState, bytes: Uint8Array, resources: PDFDict | u
         const w = num(p.get('W') ?? p.get('Width'));
         const h = num(p.get('H') ?? p.get('Height'));
         const mask = p.get('IM') ?? p.get('ImageMask');
-        addImage(state, 'インライン画像', w, h, gs.ctm, familyOfInlineColorSpace(doc, p.get('CS') ?? p.get('ColorSpace'), resources), mask?.type === 'bool' && mask.value);
+        const inlineFamily = familyOfInlineColorSpace(doc, p.get('CS') ?? p.get('ColorSpace'), resources);
+        addImage(state, 'インライン画像', w, h, gs.ctm, inlineFamily, mask?.type === 'bool' && mask.value);
+        if (inlineFamily === 'rgb') addRgbArea(state, unitSquareBounds(gs.ctm));
         if (hidden()) addNote(state, { kind: 'hidden-layer', bounds: unitSquareBounds(gs.ctm) });
         break;
       }
@@ -742,6 +767,7 @@ function doXObject(state: ScanState, xName: string, resources: PDFDict | undefin
       addNote(state, { kind: 'transparent', bounds });
     }
     if (hide) addNote(state, { kind: 'hidden-layer', bounds });
+    if (!isMask && isRgbSpace(resolveColorSpace(doc, dict.get(N('ColorSpace')), resources))) addRgbArea(state, bounds);
     addImage(
       state,
       xName,
@@ -838,6 +864,7 @@ export function scanPage(doc: PDFDocument, page: PDFPage, index: number, hiddenG
     spotColors: new Set(),
     hiddenGroups,
     fontCache: new Map(),
+    rgbAreas: [],
   };
   const resources = dictOf(doc, page.node.Resources());
   try {
@@ -861,6 +888,7 @@ export function scanPage(doc: PDFDocument, page: PDFPage, index: number, hiddenG
     fullyTransparent: state.fullyTransparent,
     notes: state.notes,
     spotColors: [...state.spotColors].sort(),
+    rgbAreas: state.rgbAreas,
   };
 }
 

@@ -6,7 +6,7 @@ import { toViewportRect } from '../render/viewport.ts';
 import { runChecks, type CheckOptions, type PageFacts, type PrintReport } from './checks.ts';
 import { scanEdges, type SideStats } from './edges.ts';
 import { contentBoundsPx } from './bounds.ts';
-import { measureGamut } from './gamut.ts';
+import { maskFromRects, measureGamut } from './gamut.ts';
 import { PT_PER_MM, rect, type Rect } from './geometry.ts';
 import { resolveLayout } from './layout.ts';
 import { scanStructure } from './structure.ts';
@@ -67,8 +67,15 @@ export async function analyzeForPrint(
       bleedPx: toPxRect(layout.bleed),
       pxPerMm: EDGE_RENDER_PX_PER_MM,
     });
-    // くすみ警告: 仕上がりの内側(実際に印刷に残る部分)だけを調べる
-    const gamut = measureGamut(image.data, image.width, image.height, trimPx);
+    // くすみ警告: 仕上がりの内側(実際に印刷に残る部分)のうち、RGB で描いた所だけを調べる
+    // (CMYK の色はインキの指定そのものなので、変換でくすむことはない)
+    const areas = structure.rgbAreas;
+    const gamut =
+      areas === 'all'
+        ? measureGamut(image.data, image.width, image.height, trimPx)
+        : areas.length === 0
+          ? { pixels: 0, moderate: 0, strong: 0 }
+          : measureGamut(image.data, image.width, image.height, trimPx, maskFromRects(image.width, image.height, areas.map(toPxRect)));
     // 入稿修正(白いフチを取り除く)用: 中身の範囲をページ座標に戻す
     const boundsPx = contentBoundsPx(image.data, image.width, image.height);
     let contentBounds: Rect | undefined;
