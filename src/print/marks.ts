@@ -1,5 +1,5 @@
 // 日本式トンボ(角トンボ + センタートンボ)を描く。
-// 寸法は暫定値(U-6)。一般的な DTP ソフトの日本式トンボの見た目に合わせている。
+// 寸法は一般的な DTP ソフトの日本式トンボの見た目に合わせている(D-026 で確定)。
 import {
   lineTo,
   moveTo,
@@ -17,11 +17,11 @@ import {
 } from '@cantoo/pdf-lib';
 import { mmToPt, type Rect } from './geometry.ts';
 
-/** トンボの線の長さ(mm、暫定) */
+/** トンボの線の長さ(mm) */
 export const MARK_LENGTH_MM = 10;
-/** 塗り足しの外端からページ端までの余白(mm、暫定)。トンボはこの中に描く */
+/** 塗り足しの外端からページ端までの余白(mm)。トンボはこの中に描く */
 export const MARK_MARGIN_MM = 13;
-/** トンボの線幅(pt、暫定)。東京カラー印刷の最小線幅 0.25pt より太くする */
+/** トンボの線幅(pt)。東京カラー印刷の最小線幅 0.25pt より太くする */
 export const MARK_LINE_WIDTH_PT = 0.3;
 
 const REGISTRATION = 'CSRegistration';
