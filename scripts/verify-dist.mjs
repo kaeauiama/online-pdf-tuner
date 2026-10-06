@@ -63,6 +63,9 @@ const patterns = [
 ];
 // SVG 名前空間などの識別子は読み込みではないので除外する
 const ALLOWED = [/^(?:https?:)?\/\/www\.w3\.org\//];
+// <a> のリンク(利用者が押したときの移動で、読み込みではない)は、このリポジトリへのものだけ許す
+const LINKS_ALLOWED = [/^https:\/\/github\.com\/kaeauiama\/online-pdf-tuner(?:[/#?]|$)/];
+const isAnchor = (text, index) => /<a\s[^<>]*$/i.test(text.slice(Math.max(0, index - 400), index));
 
 for (const file of walk(dist)) {
   if (!['.html', '.css', '.js', '.mjs'].includes(extname(file))) continue;
@@ -71,6 +74,7 @@ for (const file of walk(dist)) {
     for (const match of text.matchAll(pattern)) {
       const url = match[0].match(new RegExp(EXTERNAL))?.[0] ?? '';
       if (ALLOWED.some((re) => re.test(url))) continue;
+      if (/^href/i.test(match[0]) && isAnchor(text, match.index) && LINKS_ALLOWED.some((re) => re.test(url))) continue;
       failures.push(`${relative(dist, file)}: 外部リソースの読み込み ${match[0].slice(0, 120)}`);
     }
   }

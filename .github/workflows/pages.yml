@@ -1,0 +1,50 @@
+# GitHub Pages に公開する(D-032)。
+# 公開物は、このリポジトリのソースから GitHub 上でビルドしたものだけにする(手元でビルドしたファイルは上げない)。
+# ビルドには、CSP と外部読み込みの検査(scripts/verify-dist.mjs)が含まれ、失敗したら公開しない。
+# 使う Action は、改ざんされても気づけるように、タグではなくコミットの SHA で固定する(コメントは対応する版)。
+name: GitHub Pages に公開
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: 単体テスト
+        run: npm test
+      - name: ビルド(型チェック・CSP と外部読み込みの検査を含む)
+        run: npm run build
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
