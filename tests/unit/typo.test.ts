@@ -67,7 +67,7 @@ describe('findTypos / applyTypos', () => {
     const matches = findTypos(doc, [0], '回', '会');
     expect(matches).toHaveLength(1);
     expect(matches[0]).toMatchObject({ fixable: true, before: '講習', after: '', fontName: 'TestMincho' });
-    expect(applyTypos(doc, matches)).toBe(1);
+    expect(await applyTypos(doc, matches)).toBe(1);
     const reloaded = await PDFDocument.load(await doc.save());
     expect(pageText(reloaded)).toBe('講習会');
   });
@@ -76,7 +76,7 @@ describe('findTypos / applyTypos', () => {
     const doc = await load(EDITABLE);
     const matches = findTypos(doc, [0], '習回', '習会');
     expect(matches[0].fixable).toBe(true);
-    applyTypos(doc, matches);
+    await applyTypos(doc, matches);
     expect(pageText(await PDFDocument.load(await doc.save()))).toBe('講習会');
   });
 
@@ -108,7 +108,7 @@ describe('findTypos / applyTypos', () => {
     const doc = await load(EDITABLE, '<00010002> -50 <0004>');
     const matches = findTypos(doc, [0], '習回', '習会');
     expect(matches[0].fixable).toBe(true);
-    applyTypos(doc, matches);
+    await applyTypos(doc, matches);
     const reloaded = await PDFDocument.load(await doc.save());
     expect(pageText(reloaded)).toBe('講習会');
     const { ops } = textRuns(reloaded, reloaded.getPage(0));

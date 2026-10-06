@@ -24,6 +24,12 @@ export const REASONS = {
   NO_PAGES: {
     message: 'ページがありません。先に PDF を追加してください。',
   },
+  UNSUPPORTED_BROWSER_FEATURE: {
+    message: 'この機能は、Chrome または Edge でだけ使えます。',
+  },
+  LOCAL_FONTS_DENIED: {
+    message: 'PC のフォントの読み取りが許可されませんでした。使う場合は、ブラウザのアドレスバーのサイト設定で「フォント」を許可してください。',
+  },
   PRINT_FIX_SIZE_UNKNOWN: {
     message: '仕上がりサイズが分からないページがあるため、入稿用 PDF を作れません。「仕上がりサイズ」を選んでから、もう一度チェックしてください。',
   },

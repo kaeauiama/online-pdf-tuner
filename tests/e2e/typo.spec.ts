@@ -41,6 +41,36 @@ test('編集を許可していないフォントは、理由を示して置き�
   await expect(page.locator('#typo-apply')).toBeDisabled();
 });
 
+test('PC のフォントで補う: 足りない字を PC の同じフォントから補って置き換える', async ({ page }) => {
+  // Local Font Access API を差し替え、同梱のフォントを「PC に入っているフォント」として返す
+  await page.addInitScript(() => {
+    (window as unknown as { queryLocalFonts: () => Promise<unknown[]> }).queryLocalFonts = async () => [
+      {
+        postscriptName: 'BIZUDPGothic-Regular',
+        fullName: 'BIZ UDPGothic',
+        blob: async () => (await fetch('./fonts/BIZUDPGothic-Regular.subset.ttf')).blob(),
+      },
+    ];
+  });
+  // 「講習回」だけを埋め込んだ PDF(「会」の字はない)
+  const fontkit = (await import('@cantoo/fontkit')).default;
+  const { readFileSync } = await import('node:fs');
+  const src = await PDFDocument.create();
+  src.registerFontkit(fontkit);
+  const font = await src.embedFont(readFileSync('public/fonts/BIZUDPGothic-Regular.subset.ttf'), { subset: true });
+  src.addPage([300, 200]).drawText('講習回', { x: 20, y: 100, size: 24, font });
+
+  await page.goto('/');
+  await addPdfs(page, [{ name: 'notice.pdf', buffer: Buffer.from(await src.save()) }]);
+  await search(page, '回', '会');
+  await expect(page.locator('.typo-item.is-ng')).toHaveCount(1);
+  await page.click('.typo-pc-fonts button');
+  await expect(page.locator('.typo-item.is-ok .typo-local-tag')).toHaveText('PC のフォントで補う');
+  await page.click('#typo-apply');
+  await expect(page.locator('.toast')).toContainText('1 箇所を「会」に置き換えました');
+  expect(await savedText(page)).toBe('講習会');
+});
+
 test('フォントにない字・字数の違いは、理由を示す', async ({ page }) => {
   await page.goto('/');
   await addPdfs(page, [{ name: 'notice.pdf', buffer: Buffer.from(await typoPdf(0x0008)) }]);

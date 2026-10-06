@@ -1,8 +1,10 @@
 // 誤植を直す(S1・試験的)のダイアログ。
 import type { PDFDocument } from '@cantoo/pdf-lib';
 import { loadPdfForEditOrThrow } from '../core/pdfLoad.ts';
+import { ReasonError } from '../core/reasons.ts';
 import type { SourceId } from '../core/pageList.ts';
-import { applyTypos, findTypos, TYPO_MESSAGES, type TypoMatch } from '../typo/typo.ts';
+import { findPcFonts, normalizeFontName, supportsPcFonts, type LocalFont } from '../typo/localFonts.ts';
+import { applyTypos, findTypos, TYPO_MESSAGES, type LocalFontLookup, type TypoMatch } from '../typo/typo.ts';
 import type { Store } from './store.ts';
 import { $, el, type Ui } from './ui.ts';
 
@@ -22,6 +24,9 @@ export function setupTypoDialog(store: Store, ui: Ui): void {
 
   let found: FoundMatch[] = [];
   let replaceText = '';
+  /** 利用者が許可して読み込んだ PC のフォント(キーは normalizeFontName した名前) */
+  let pcFonts: Map<string, LocalFont> | null = null;
+  const lookup = (): LocalFontLookup | undefined => (pcFonts ? (name) => pcFonts!.get(normalizeFontName(name)) : undefined);
 
   $<HTMLButtonElement>('[data-action="open-typo"]').addEventListener('click', () => {
     errorBox.textContent = '';
@@ -67,7 +72,7 @@ export function setupTypoDialog(store: Store, ui: Ui): void {
       const next: FoundMatch[] = [];
       for (const [sourceId, pageIndexes] of bySource) {
         const doc = await loadPdfForEditOrThrow(store.sources.get(sourceId)!.bytes);
-        for (const match of findTypos(doc, pageIndexes, find, replace)) {
+        for (const match of findTypos(doc, pageIndexes, find, replace, lookup())) {
           next.push({ sourceId, displayPage: position.get(`${sourceId}:${match.pageIndex}`) ?? 0, match });
         }
       }
@@ -108,6 +113,7 @@ export function setupTypoDialog(store: Store, ui: Ui): void {
         f.match.fixable ? ' → ' : '',
       );
       if (f.match.fixable) text.append(`…${b}`, el('mark', 'typo-new', replace), `${a}…`);
+      if (f.match.fixable && f.match.localKey) text.append(el('span', 'typo-local-tag', 'PC のフォントで補う'));
       line.append(check, text);
       item.append(line);
       if (!f.match.fixable && f.match.reason) item.append(el('p', 'typo-reason', TYPO_MESSAGES[f.match.reason](f.match)));
@@ -118,9 +124,44 @@ export function setupTypoDialog(store: Store, ui: Ui): void {
       'typo-summary',
       `${found.length} 箇所見つかりました。そのうち ${fixable} 箇所を置き換えられます。${fixable < found.length ? '置き換えられない箇所は、理由を表示しています。' : ''}`,
     );
-    resultsBox.replaceChildren(summary, list);
+    const nodes: Node[] = [summary, list];
+
+    // 埋め込みのフォントに字が足りない箇所があれば、PC の同じフォントで補う案内を出す(D-027。Chrome / Edge のみ)
+    const missingFonts = [...new Set(found.filter((f) => f.match.reason === 'TYPO_GLYPH_MISSING' || f.match.reason === 'TYPO_FONT_LICENSE_UNKNOWN').map((f) => f.match.fontName))];
+    if (missingFonts.length > 0 && !pcFonts) {
+      const box = el('div', 'typo-pc-fonts');
+      if (supportsPcFonts()) {
+        const button = el('button', 'btn', 'PC のフォントで補って探し直す');
+        button.type = 'button';
+        button.addEventListener('click', () => void usePcFonts(missingFonts, find, replace));
+        box.append(
+          el('p', 'typo-hint', `この PC に「${missingFonts.join('」「')}」が入っていれば、足りない字をそこから補えます(フォントの許諾も、PC のフォントで確認します)。初めて使うときは、ブラウザがフォントへのアクセスの許可を求めます(フォントはこの PC の中で読むだけで、送信しません)。`),
+          button,
+        );
+      } else {
+        box.append(el('p', 'typo-hint', 'PC のフォントで足りない字を補う機能は、Chrome または Edge でだけ使えます。'));
+      }
+      nodes.push(box);
+    }
+    resultsBox.replaceChildren(...nodes);
     applyButton.disabled = fixable === 0;
     applyButton.textContent = `選んだ箇所を置き換える`;
+  }
+
+  async function usePcFonts(fontNames: string[], find: string, replace: string): Promise<void> {
+    // 許可ダイアログはボタンを押した直後でないと出ないため、ほかの処理より先に呼ぶ
+    let fonts: Map<string, LocalFont>;
+    try {
+      fonts = await findPcFonts(fontNames);
+    } catch (e) {
+      if (e instanceof ReasonError) ui.toastReason(e.code, e.detail);
+      else throw e;
+      return;
+    }
+    pcFonts = fonts;
+    form.querySelector<HTMLInputElement>('input[name="find"]')!.value = find;
+    form.querySelector<HTMLInputElement>('input[name="replace"]')!.value = replace;
+    await search();
   }
 
   applyButton.addEventListener('click', () => void apply());
@@ -137,7 +178,7 @@ export function setupTypoDialog(store: Store, ui: Ui): void {
       let count = 0;
       for (const [sourceId, matches] of bySource) {
         const doc: PDFDocument = await loadPdfForEditOrThrow(store.sources.get(sourceId)!.bytes);
-        count += applyTypos(doc, matches);
+        count += await applyTypos(doc, matches, lookup());
         replacements.set(sourceId, await doc.save({ useObjectStreams: true }));
       }
       store.replaceSources(replacements);
