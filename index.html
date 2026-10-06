@@ -22,6 +22,7 @@
       </div>
       <nav class="mode-tabs" role="tablist" aria-label="画面の切り替え">
         <button type="button" role="tab" class="mode-tab" data-mode-tab="edit" aria-controls="edit-view">ページの編集</button>
+        <button type="button" role="tab" class="mode-tab" data-mode-tab="editor" aria-controls="editor-view">ページの中</button>
         <button type="button" role="tab" class="mode-tab" data-mode-tab="check" aria-controls="check-view">入稿チェック</button>
       </nav>
       <button type="button" class="btn install-button" id="install-app" hidden title="インストールすると、オフラインでも使え、PDF を「プログラムから開く」で開けます">
@@ -111,6 +112,49 @@
         </div>
         <ol class="page-grid" id="grid" aria-label="ページ一覧"></ol>
       </section>
+    </main>
+
+<main id="editor-view" class="editor-view" role="tabpanel" aria-label="ページの中" hidden>
+      <div class="editor-main">
+        <div class="editor-toolbar">
+          <button type="button" class="btn btn-icon" id="editor-prev" aria-label="前のページ">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
+          </button>
+          <select id="editor-page" class="editor-page-select" aria-label="編集するページ"></select>
+          <button type="button" class="btn btn-icon" id="editor-next" aria-label="次のページ">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+          </button>
+          <button type="button" class="btn btn-icon" id="editor-undo" title="元に戻す (Ctrl+Z)" aria-label="元に戻す">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14L4 9l5-5" /><path d="M4 9h11a5 5 0 0 1 0 10h-3" /></svg>
+          </button>
+          <button type="button" class="btn btn-icon" id="editor-redo" title="やり直す (Ctrl+Y)" aria-label="やり直す">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 14l5-5-5-5" /><path d="M20 9H9a5 5 0 0 0 0 10h3" /></svg>
+          </button>
+          <span class="editor-status" id="editor-status" aria-live="polite"></span>
+          <div class="tool-spacer"></div>
+          <button type="button" class="btn" id="editor-discard">変更を取り消す</button>
+          <button type="button" class="btn btn-primary" id="editor-apply">適用</button>
+        </div>
+        <p class="editor-empty" id="editor-empty">「ページの編集」で PDF を追加すると、ここでページの中の画像や文字を、レイヤーとして見たり動かしたりできます。</p>
+        <div class="editor-stage" id="editor-stage" tabindex="0" aria-label="ページ(要素をクリックで選び、ドラッグや矢印キーで動かせます)">
+          <div class="editor-canvas-wrap">
+            <canvas id="editor-canvas"></canvas>
+            <canvas id="editor-overlay"></canvas>
+          </div>
+        </div>
+      </div>
+      <aside class="editor-side">
+        <section class="editor-props" id="editor-props" aria-label="選んだ要素"></section>
+        <section class="editor-layers" aria-label="レイヤー">
+          <div class="layers-head">
+            <h3>レイヤー</h3>
+            <span class="hint">上が手前</span>
+          </div>
+          <label class="checkbox-line"><input type="checkbox" id="editor-show-hidden" /> 見えない要素(検索用の文字など)も表示</label>
+          <ol id="editor-layer-list" class="layer-list"></ol>
+          <p class="hint">「効果(推定)」は、影やぼかしなどを、描かれた順番と位置から推定して本体の下にまとめたものです。外れることがあります。</p>
+        </section>
+      </aside>
     </main>
 
     <main id="check-view" class="check-view" role="tabpanel" aria-label="入稿チェック" hidden>

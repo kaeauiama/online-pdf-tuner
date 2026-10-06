@@ -57,6 +57,35 @@ export function multiply(m1: Matrix, m2: Matrix): Matrix {
   ];
 }
 
+/** 逆行列。退化している(大きさ 0 の)行列なら undefined */
+export function invert(m: Matrix): Matrix | undefined {
+  const [a, b, c, d, e, f] = m;
+  const det = a * d - b * c;
+  if (Math.abs(det) < 1e-12) return undefined;
+  return [d / det, -b / det, -c / det, a / det, (c * f - d * e) / det, (b * e - a * f) / det];
+}
+
+/** 矩形を行列で写した先の外接矩形 */
+export function transformRect(m: Matrix, r: Rect): Rect {
+  const pts = [applyToPoint(m, r.x0, r.y0), applyToPoint(m, r.x1, r.y0), applyToPoint(m, r.x0, r.y1), applyToPoint(m, r.x1, r.y1)];
+  const xs = pts.map((p) => p[0]);
+  const ys = pts.map((p) => p[1]);
+  return rect(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys));
+}
+
+export function unionRect(a: Rect, b: Rect): Rect {
+  return { x0: Math.min(a.x0, b.x0), y0: Math.min(a.y0, b.y0), x1: Math.max(a.x1, b.x1), y1: Math.max(a.y1, b.y1) };
+}
+
+export function intersectRect(a: Rect, b: Rect): Rect | undefined {
+  const r = { x0: Math.max(a.x0, b.x0), y0: Math.max(a.y0, b.y0), x1: Math.min(a.x1, b.x1), y1: Math.min(a.y1, b.y1) };
+  return r.x0 < r.x1 && r.y0 < r.y1 ? r : undefined;
+}
+
+export function rectArea(r: Rect): number {
+  return Math.max(0, r.x1 - r.x0) * Math.max(0, r.y1 - r.y0);
+}
+
 export function applyToPoint(m: Matrix, x: number, y: number): [number, number] {
   return [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
 }

@@ -1,10 +1,11 @@
 // 効果の焼き込み(ブラウザ): 文字以外の層を pdf.js で描画して画像にし、元のページを「画像 + 文字だけの層」に置き換える。
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFStream, type PDFPage } from '@cantoo/pdf-lib';
+import { PDFDict, PDFDocument, PDFName, PDFStream } from '@cantoo/pdf-lib';
 import { AnnotationMode } from 'pdfjs-dist';
 import { loadPdfForEditOrThrow } from '../core/pdfLoad.ts';
 import { lexContent } from '../pdf/lexer.ts';
 import { openForRender } from '../render/pdfjs.ts';
-import { flattenScale, splitTextLayers, type GsInfo } from './flatten.ts';
+import { extGStateReader } from '../pdf/extgstate.ts';
+import { flattenScale, splitTextLayers } from './flatten.ts';
 import { pageContentBytes, streamBytes } from './structure.ts';
 
 /** JPEG の品質(0〜1)。写真と図形が混ざるページで、にじみが目立たない程度に高くする */
@@ -20,28 +21,6 @@ export interface FlattenedPage {
   readonly invisibleText: number;
   /** 効果ごと画像に焼き込んだ、半透明などの文字の数 */
   readonly rasterizedText: number;
-}
-
-/** ページの ExtGState から、透明に関わる値を読む */
-function extGStateReader(page: PDFPage): (name: string) => GsInfo | undefined {
-  const dict = page.node.Resources()?.lookupMaybe(PDFName.of('ExtGState'), PDFDict);
-  return (name) => {
-    const gs = dict?.lookupMaybe(PDFName.of(name), PDFDict);
-    if (!gs) return undefined;
-    const number = (key: string) => {
-      const v = gs.lookup(PDFName.of(key));
-      return v instanceof PDFNumber ? v.asNumber() : undefined;
-    };
-    const smask = gs.lookup(PDFName.of('SMask'));
-    const bm = gs.lookup(PDFName.of('BM'));
-    const mode = bm instanceof PDFArray ? bm.lookup(0) : bm;
-    return {
-      fillAlpha: number('ca'),
-      strokeAlpha: number('CA'),
-      softMask: smask === undefined ? undefined : smask instanceof PDFDict,
-      blend: mode instanceof PDFName ? !['Normal', 'Compatible'].includes(mode.decodeText()) : undefined,
-    };
-  };
 }
 
 export interface FlattenResult {
@@ -95,7 +74,7 @@ export async function flattenPdf(
   for (const [k, i] of targets.entries()) {
     progress(`効果を焼き込んでいます…(${k + 1} / ${targets.length})`);
     const page = doc.getPage(i);
-    const layers = splitTextLayers(pageContentBytes(doc, page), extGStateReader(page));
+    const layers = splitTextLayers(pageContentBytes(doc, page), extGStateReader(page.node.Resources()));
 
     // 1. 文字以外の層だけのページを作って描画する
     const tmp = await PDFDocument.create({ updateMetadata: false });

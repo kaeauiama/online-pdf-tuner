@@ -1494,3 +1494,251 @@ svg {
   border: 1px dashed var(--border);
   border-radius: 8px;
 }
+
+/* ---------- ページの中(M6) ---------- */
+
+.editor-view {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 16px;
+  align-items: start;
+  padding: 16px 20px;
+}
+
+.editor-main {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.editor-page-select {
+  height: 34px;
+  max-width: 320px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.editor-status {
+  margin-left: 8px;
+  font-size: 13px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.editor-empty {
+  margin: 0;
+  padding: 24px;
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  color: var(--text-2);
+  background: var(--surface);
+}
+
+.editor-stage {
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+  background: var(--surface-2);
+  border-radius: 12px;
+  overflow: auto;
+  outline: none;
+}
+
+.editor-stage:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.editor-canvas-wrap {
+  position: relative;
+  box-shadow: var(--shadow-lg);
+  background: #fff;
+}
+
+#editor-canvas {
+  display: block;
+}
+
+#editor-overlay {
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+}
+
+.editor-side {
+  position: sticky;
+  top: 16px;
+  display: grid;
+  gap: 12px;
+  max-height: calc(100vh - 140px);
+  min-height: 0;
+}
+
+.editor-props,
+.editor-layers {
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  min-height: 0;
+}
+
+.editor-layers {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.layers-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.layers-head h3,
+.props-title {
+  margin: 0;
+  font-size: 15px;
+}
+
+.layer-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  max-height: 46vh;
+  border-top: 1px solid var(--border);
+}
+
+.layer-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.layer-row:hover {
+  background: var(--surface-2);
+}
+
+.layer-row.is-selected {
+  background: var(--accent-soft);
+}
+
+.layer-row.is-nested {
+  padding-left: 30px;
+  color: var(--text-2);
+}
+
+.layer-eye {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.layer-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.layer-icon {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--text-2);
+}
+
+.layer-icon[data-kind='image'] { background: #2e9d6a; }
+.layer-icon[data-kind='text'] { background: #1f5fbf; border-radius: 50%; }
+.layer-icon[data-kind='path'] { background: #d9822b; transform: rotate(45deg); }
+.layer-icon[data-kind='shading'] { background: linear-gradient(90deg, #b24bb5, #2a9bb0); }
+.layer-icon[data-kind='group'] { background: transparent; border: 2px solid #5b5fd6; }
+.layer-icon[data-kind='mixed'] { background: transparent; border: 2px dashed #8a6d2f; }
+
+.layer-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layer-chips {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+.layer-chip {
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--surface-2);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.layer-chip.is-effect { background: color-mix(in srgb, #7c4dff 15%, transparent); color: #7c4dff; }
+.layer-chip.is-fixed { background: var(--danger-soft); color: var(--danger); }
+.layer-chip.is-deleted { background: var(--danger); color: #fff; }
+.layer-chip.is-changed { background: var(--accent); color: var(--accent-text); }
+
+.props-box {
+  display: grid;
+  gap: 8px;
+}
+
+.props-info {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.props-warn {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.props-form .input-num {
+  width: 6.5em;
+}
+
+.props-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+@media (max-width: 1100px) {
+  .editor-view {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .editor-side {
+    position: static;
+    max-height: none;
+  }
+}

@@ -43,7 +43,9 @@
 - `src/typo/` — 誤植修正(S1・試験的)。フォントの許諾(fsType)の確認は `src/pdf/fonts.ts`
 - `src/text/` — 文字入れ・ページ番号(M5)。`stamp.ts` が配置の計算、`fonts.ts` が同梱フォントの読み込み
 - `src/print/flatten.ts` / `flattenRender.ts` — 効果の焼き込み
-- `src/app/` — 画面と操作(`app.ts` が編集画面、`checkView.ts` が入稿チェック画面、`typoDialog.ts` が誤植修正)
+- `src/editor/` — ページ内の編集(M6)。`elements.ts` が要素の取り出しと関連の推定、`edit.ts` が移動・削除の書き換え
+- `src/typo/localFonts.ts` — PC のフォントの読み取り(誤植修正の補い、Chrome / Edge のみ)
+- `src/app/` — 画面と操作(`app.ts` が編集画面、`editorView.ts` がページの中、`checkView.ts` が入稿チェック画面、`typoDialog.ts` が誤植修正)
 - `src/sw/sw-template.js` — サービスワーカー(M4)。ビルド時に `vite.config.ts` が `dist/sw.js` を書き出す
 - `src/app/pwa.ts` — サービスワーカーの登録・更新の通知・ファイルハンドラ・インストール
 - `public/fonts/` — 文字入れ用の日本語フォント(BIZ UDPゴシック、OFL)。`scripts/build-fonts.py` で生成

@@ -10,22 +10,15 @@
 //
 // この関数群はコンテンツストリームの書き換え(純粋関数)。描画は flattenRender.ts(ブラウザ)で行う。
 import { lexContent, name as opName, num } from '../pdf/lexer.ts';
+import type { GsInfo } from '../pdf/extgstate.ts';
 import { serializeOp, spliceAll } from '../pdf/serialize.ts';
+
+export type { GsInfo };
 
 const TEXT_SHOW = new Set(['Tj', 'TJ', "'", '"']);
 const PATH_PAINT = new Set(['f', 'F', 'f*', 'S', 's', 'B', 'B*', 'b', 'b*']);
 const FILL_MODES = new Set([0, 2, 4, 6]);
 const STROKE_MODES = new Set([1, 2, 5, 6]);
-
-/** ExtGState の、透明に関わる値(指定がない項目は undefined) */
-export interface GsInfo {
-  readonly fillAlpha?: number;
-  readonly strokeAlpha?: number;
-  /** ソフトマスクを設定する(true)/ 解除する(false) */
-  readonly softMask?: boolean;
-  /** Normal / Compatible 以外の描画モードを設定する(true)/ Normal に戻す(false) */
-  readonly blend?: boolean;
-}
 
 interface State {
   fillAlpha: number;
