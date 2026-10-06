@@ -246,7 +246,6 @@ function rewriteWithLocal(
   localFont: PDFFont,
 ): string {
   const items: Operand[] = op.op === 'TJ' && op.operands[0]?.type === 'array' ? op.operands[0].items : [op.operands[0]];
-  type Piece = { kind: 'orig'; bytes: number[] } | { kind: 'local'; bytes: number[] } | { kind: 'kern'; value: Operand };
   const pieces: Piece[] = [];
   items.forEach((item, i) => {
     if (item.type !== 'string') {
@@ -262,7 +261,17 @@ function rewriteWithLocal(
       }
     }
   });
+  return writePieces(pieces, fontResource, fontSize, localResource);
+}
 
+/** 文字表示の命令の部品: 元のフォントのコード、PC のフォントのコード、字間の調整(TJ の数値) */
+export type Piece = { kind: 'orig'; bytes: number[] } | { kind: 'local'; bytes: number[] } | { kind: 'kern'; value: Operand };
+
+/**
+ * 部品の並びを、TJ の命令として書き出す。元のフォントの部分と PC のフォントの部分の間だけ Tf でフォントを切り替え、
+ * 最後は元のフォントに戻す(後に続く命令が元のフォントを前提にしているため)
+ */
+export function writePieces(pieces: readonly Piece[], fontResource: string, fontSize: number, localResource: string): string {
   const out: string[] = [];
   let current: 'orig' | 'local' = 'orig';
   let array: Operand[] = [];
@@ -287,6 +296,7 @@ function rewriteWithLocal(
   }
   flush();
   if (current === 'local') out.push(`/${fontResource} ${size} Tf`);
+  if (out.length === 0) out.push('[] TJ');
   return out.join(' ');
 }
 

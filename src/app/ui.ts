@@ -14,8 +14,19 @@ export function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: st
   return node;
 }
 
+export interface Choice<T extends string> {
+  readonly value: T;
+  readonly label: string;
+  readonly primary?: boolean;
+}
+
 export interface Ui {
   toast(message: string, kind?: 'info' | 'error', code?: string): void;
+  /**
+   * アプリ内のダイアログで選んでもらう(ブラウザの confirm は環境によって出ないことがあるため使わない)。
+   * Esc や閉じるボタンで閉じたときは cancelValue を返す
+   */
+  choose<T extends string>(title: string, message: string, choices: readonly Choice<T>[], cancelValue: T): Promise<T>;
   toastReason(code: ReasonCode, detail?: string): void;
   /** 重い処理の前に「処理中」を表示し、描画の機会を与えてから実行する。例外は通知に変える */
   run(label: string, task: (progress: (text: string) => void) => Promise<void>): Promise<void>;
@@ -66,5 +77,30 @@ export function createUi(): Ui {
     }
   }
 
-  return { toast, toastReason, run };
+  const choiceDialog = $<HTMLDialogElement>('#choice-dialog');
+  function choose<T extends string>(title: string, message: string, choices: readonly Choice<T>[], cancelValue: T): Promise<T> {
+    return new Promise((resolve) => {
+      $<HTMLElement>('#choice-title').textContent = title;
+      $<HTMLElement>('#choice-message').textContent = message;
+      const actions = $<HTMLElement>('#choice-actions');
+      let result: T = cancelValue;
+      actions.replaceChildren(
+        ...choices.map((c) => {
+          const b = el('button', c.primary ? 'btn btn-primary' : 'btn', c.label);
+          b.type = 'button';
+          b.dataset.choice = c.value;
+          b.addEventListener('click', () => {
+            result = c.value;
+            choiceDialog.close();
+          });
+          return b;
+        }),
+      );
+      choiceDialog.addEventListener('close', () => resolve(result), { once: true });
+      choiceDialog.showModal();
+      actions.querySelector<HTMLButtonElement>('.btn-primary')?.focus();
+    });
+  }
+
+  return { toast, toastReason, run, choose };
 }

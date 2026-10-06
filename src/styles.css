@@ -1530,6 +1530,9 @@ svg {
 }
 
 .editor-status {
+  /* 長い表示は、ボタンを次の行に押し出さずに、この中で折り返す */
+  flex: 1 1 8em;
+  min-width: 6em;
   margin-left: 8px;
   font-size: 13px;
   color: var(--accent);
@@ -1732,6 +1735,65 @@ svg {
   gap: 6px;
 }
 
+.editor-props {
+  overflow: auto;
+}
+
+.btn-small {
+  height: 28px;
+  padding: 0 9px;
+  font-size: 13px;
+}
+
+.props-order,
+.props-text {
+  display: grid;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.props-order-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.props-order .hint,
+.props-text .hint {
+  margin: 0;
+}
+
+.text-line {
+  display: grid;
+  gap: 4px;
+}
+
+.text-line-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.text-line-msg {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.text-line-msg.is-error {
+  color: var(--danger);
+}
+
+.text-line-msg.is-warn {
+  color: #9a5c00;
+}
+
+@media (prefers-color-scheme: dark) {
+  .text-line-msg.is-warn {
+    color: #f0b45a;
+  }
+}
+
 @media (max-width: 1100px) {
   .editor-view {
     grid-template-columns: minmax(0, 1fr);
@@ -1741,4 +1803,14 @@ svg {
     position: static;
     max-height: none;
   }
+}
+
+.choice-message {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+#choice-actions {
+  flex-wrap: wrap;
 }

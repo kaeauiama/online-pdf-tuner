@@ -32,9 +32,10 @@ export type Mode = 'edit' | 'editor' | 'check';
 export function startApp(): void {
   const store = new Store();
   const thumbs = new Thumbnails(store);
-  const { toast, toastReason, run } = createUi();
+  const ui = createUi();
+  const { toast, toastReason, run } = ui;
   const chooseImageOptions = setupImageImport();
-  const editor = setupEditorView(store, { toast, toastReason, run });
+  const editor = setupEditorView(store, ui);
 
   const grid = $<HTMLOListElement>('#grid');
   const filesBar = $<HTMLElement>('#files');
@@ -153,13 +154,10 @@ export function startApp(): void {
 
   // ---------- 画面の切り替え ----------
 
-  function setMode(mode: Mode): void {
+  async function setMode(mode: Mode): Promise<void> {
     const current = document.body.dataset.mode as Mode | undefined;
-    // 「ページの中」で適用していない変更があれば、離れる前に確かめる
-    if (current === 'editor' && mode !== 'editor' && editor.hasUnapplied()) {
-      if (!window.confirm('「ページの中」に、適用していない変更があります。破棄してよいですか?')) return;
-      editor.discard();
-    }
+    // 「ページの中」で適用していない変更があれば、離れる前に「適用 / 破棄 / 残る」を選んでもらう
+    if (current === 'editor' && mode !== 'editor' && !(await editor.confirmLeave())) return;
     document.body.dataset.mode = mode;
     for (const tab of document.querySelectorAll<HTMLButtonElement>('[data-mode-tab]')) {
       const selected = tab.dataset.modeTab === mode;
@@ -173,7 +171,7 @@ export function startApp(): void {
   }
 
   for (const tab of document.querySelectorAll<HTMLButtonElement>('[data-mode-tab]')) {
-    tab.addEventListener('click', () => setMode(tab.dataset.modeTab as Mode));
+    tab.addEventListener('click', () => void setMode(tab.dataset.modeTab as Mode));
   }
 
   // ---------- ファイルの追加 ----------
@@ -470,13 +468,13 @@ export function startApp(): void {
 
   $<HTMLButtonElement>('#privacy-open').addEventListener('click', () => privacyDialog.showModal());
 
-  setupCheckView(store, { toast, toastReason, run }, () => setMode('edit'));
-  setupTypoDialog(store, { toast, toastReason, run });
-  setupWriteDialogs(store, { toast, toastReason, run });
-  setupImageExport(store, { toast, toastReason, run });
-  setupPwa({ toast, toastReason, run }, addFiles);
+  setupCheckView(store, ui, () => void setMode('edit'));
+  setupTypoDialog(store, ui);
+  setupWriteDialogs(store, ui);
+  setupImageExport(store, ui);
+  setupPwa(ui, addFiles);
 
   store.subscribe(render);
-  setMode('edit');
+  void setMode('edit');
   render();
 }
