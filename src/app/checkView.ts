@@ -9,6 +9,7 @@ import type { Binding, CheckOptions, Finding, Mark, Severity } from '../print/ch
 import { blankPagesForSaddle, buildPrintReady, type BleedMethod, type FixResult, type RegionFit } from '../print/fix.ts';
 import { flattenPdf } from '../print/flattenRender.ts';
 import { highlightOutOfGamut, simulatePrint } from '../print/gamut.ts';
+import { GAMUT_SOURCE } from '../print/gamutTable.ts';
 import { ptToMm, rectHeight, rectWidth, type Rect } from '../print/geometry.ts';
 import type { PageLayout } from '../print/layout.ts';
 import { PRINT_MESSAGES } from '../print/messages.ts';
@@ -583,7 +584,7 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
   type PreviewMode = 'normal' | 'gamut' | 'print';
   const MODE_NOTE: Record<PreviewMode, string> = {
     normal: '',
-    gamut: '色が残っている所が、印刷でくすみやすい色です(灰色の部分は問題ありません)。判定は一般的なオフセット印刷を基準にした目安です。',
+    gamut: `色が残っている所が、印刷でくすみやすい色です(灰色の部分は問題ありません)。判定は ${GAMUT_SOURCE}(日本の標準的なオフセット印刷)を基準にした目安です。`,
     print: '印刷したときのおおよその色です。画面の設定・印刷所・紙によって実際の色は変わります。',
   };
   const previewMode = (): PreviewMode =>

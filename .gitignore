@@ -5,3 +5,5 @@ public/pdfjs/
 test-results/
 playwright-report/
 *.local
+# 開発用の外部ファイル(ICC プロファイルなど。リポジトリには入れない)
+.cache/

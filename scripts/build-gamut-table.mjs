@@ -1,16 +1,26 @@
 // くすみ警告(S2)用の「印刷で出せる色の範囲」の表を作る開発用スクリプト。
 // 使い方: node scripts/build-gamut-table.mjs  → src/print/gamutTable.ts を書き出す
 //
-// 基準のプロファイル: pdfjs-dist に同梱の CGATS001Compat-v2-micro.icc(CC0。米国のオフセット印刷の標準 CGATS TR 001 相当)。
+// 基準のプロファイル(D-029):
+//  1. .cache/JapanColor2011Coated.icc があればそれを使う(Japan Color 2011 Coated。ICC の登録簿から入手。
+//     「制限なく使用・共有してよい。改変・販売は不可」。プロファイル自体はリポジトリに入れず、計算した表の数値だけを使う)
+//     入手: https://registry.color.org/profile-registry/profiles/JapanColor2011Coated.icc を .cache/ に保存する
+//  2. なければ pdfjs-dist 同梱の CGATS001Compat-v2-micro.icc(CC0。米国のオフセット印刷の標準 CGATS TR 001 相当)
 // CMYK の格子点を Lab(D50、相対的な色域を維持)に変換し、明度 L と色相 h ごとに、出せる最大の彩度 C を記録する。
 // 実行時は lcms を使わず、この表と sRGB → Lab の計算式(src/print/gamut.ts)だけで判定する。
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { instantiate, INTENT_RELATIVE_COLORIMETRIC } from 'lcms-wasm';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const PROFILE = 'node_modules/pdfjs-dist/iccs/CGATS001Compat-v2-micro.icc';
+const JAPAN_COLOR = '.cache/JapanColor2011Coated.icc';
+const useJapanColor = existsSync(join(root, JAPAN_COLOR));
+const PROFILE = useJapanColor ? JAPAN_COLOR : 'node_modules/pdfjs-dist/iccs/CGATS001Compat-v2-micro.icc';
+const SOURCE = useJapanColor
+  ? 'Japan Color 2011 Coated(JapanColor2011Coated.icc、日本印刷産業機械工業会。ICC の登録簿で入手。改変・販売不可、使用・共有は自由)'
+  : 'CGATS001Compat-v2-micro.icc(CC0。米国のオフセット印刷の標準 CGATS TR 001 相当)';
+const SOURCE_SHORT = useJapanColor ? 'Japan Color 2011 Coated' : 'CGATS TR 001(米国のオフセット印刷の標準)';
 const L_STEP = 2;
 const H_STEP = 5;
 const L_BINS = 100 / L_STEP + 1;
@@ -90,11 +100,11 @@ function srgbToLabD50(r, g, b) {
 
 const values = Array.from(smoothed, (v) => Math.round(v));
 const out = `// 自動生成: node scripts/build-gamut-table.mjs(手で編集しないこと)
-// 基準: ${PROFILE}(CC0。米国のオフセット印刷の標準 CGATS TR 001 相当)
+// 基準: ${SOURCE}
 // 相対的な色域を維持(INTENT_RELATIVE_COLORIMETRIC)で CMYK を Lab(D50)に変換し、明度・色相ごとの最大彩度を記録した。
-// 日本の印刷(Japan Color)とは少し異なるため、くすみ警告はあくまで目安として扱う。
+// 印刷所・紙・印刷方式(オフセット / オンデマンド)によって実際の色域は異なるため、くすみ警告はあくまで目安として扱う。
 
-export const GAMUT_SOURCE = 'CGATS001Compat-v2-micro.icc (CC0, CGATS TR 001)';
+export const GAMUT_SOURCE = '${SOURCE_SHORT}';
 export const GAMUT_L_STEP = ${L_STEP};
 export const GAMUT_H_STEP = ${H_STEP};
 export const GAMUT_L_BINS = ${L_BINS};
