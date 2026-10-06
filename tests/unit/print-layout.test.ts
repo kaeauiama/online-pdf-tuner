@@ -18,6 +18,8 @@ function page(wMm: number, hMm: number, extra: Partial<PageStructure> = {}): Pag
     colorUse: { rgb: 0, cmyk: 0, gray: 0, spot: 0, other: 0 },
     transparency: false,
     fullyTransparent: false,
+    notes: [],
+    spotColors: [],
     ...extra,
   };
 }

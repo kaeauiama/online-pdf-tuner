@@ -98,8 +98,8 @@ test('編集すると結果が古いことを示し、再チェック後も編�
   await expect(page.locator('.summary-layout')).toContainText('2 ページ');
   expect(await codes(page)).toContain('PRINT_MIXED_SIZES'); // 154×216mm と 148×210mm
 
-  // ページの番号ボタンでプレビューを切り替える
-  await page.locator('.finding').filter({ hasText: 'PRINT_NO_BLEED' }).locator('.page-chip').first().click();
+  // 指摘の「場所を見る」でプレビューを切り替える(端の色の指摘は、辺の帯を場所として持つ)
+  await page.locator('.finding').filter({ hasText: 'PRINT_NO_BLEED' }).getByRole('button', { name: /場所を見る/ }).click();
   await expect(page.locator('#preview-page')).toHaveText('2 / 2 ページ');
 
   // 編集画面に戻って、さらにファイルを追加してもサムネイルが描ける(共有ワーカーが壊れていない)

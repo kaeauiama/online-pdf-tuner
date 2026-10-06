@@ -2,11 +2,11 @@
 import type { SideStats } from './edges.ts';
 import { displayedSide } from './edges.ts';
 import type { GamutStats } from './gamut.ts';
-import { containsRect, intersects, ptToMm, rectHeight, rectWidth, type Rect } from './geometry.ts';
+import { containsRect, intersects, mmToPt, ptToMm, rect, rectHeight, rectWidth, type Rect } from './geometry.ts';
 import { resolveLayout, type PageLayout, type PaperChoice } from './layout.ts';
 import { formatSize } from './paperSizes.ts';
 import type { PrintProfile } from './profiles.ts';
-import type { ImagePlacement, PageStructure } from './structure.ts';
+import type { ImagePlacement, PageStructure, PaintNote, PaintNoteKind } from './structure.ts';
 import type { TextBox } from './textBoxes.ts';
 import {
   EDGE_PROBLEM_RATIO,
@@ -16,7 +16,10 @@ import {
   LOW_DPI_WARN,
   MIN_IMAGE_AREA_MM2,
   MIN_IMAGE_PIXELS,
+  INK_LIMIT_PERCENT,
+  SMALL_TEXT_PT,
   TEXT_TOLERANCE_PT,
+  THIN_LINE_MM,
 } from './thresholds.ts';
 
 export type Severity = 'error' | 'warn' | 'info';
@@ -38,12 +41,25 @@ export type PrintCode =
   | 'PRINT_HAS_FORM_FIELDS'
   | 'PRINT_COLOR_DULL'
   | 'PRINT_RGB_CONTENT'
-  | 'PRINT_TRANSPARENCY';
+  | 'PRINT_TRANSPARENCY'
+  | 'PRINT_LINE_ZERO_WIDTH'
+  | 'PRINT_LINE_TOO_THIN'
+  | 'PRINT_FILL_ONLY_LINE'
+  | 'PRINT_WHITE_OVERPRINT'
+  | 'PRINT_SMALL_TEXT'
+  | 'PRINT_RICH_BLACK_TEXT'
+  | 'PRINT_INK_OVER_LIMIT'
+  | 'PRINT_SPOT_COLOR'
+  | 'PRINT_REGISTRATION_COLOR'
+  | 'PRINT_HIDDEN_LAYER';
 
+/** 指摘の対象の場所(プレビューで、選んだ指摘の対象を示すのに使う) */
 export interface Mark {
   readonly page: number;
   readonly rect: Rect;
-  readonly kind: 'text' | 'image';
+  readonly kind: 'text' | 'image' | 'object' | 'area';
+  /** 場所ごとの説明(文字の内容・線幅など) */
+  readonly label?: string;
 }
 
 export interface Finding {
@@ -97,6 +113,23 @@ function isFlatImage(img: ImagePlacement): boolean {
   return (img.pixelWidth * img.pixelHeight * components) / img.encodedBytes > FLAT_IMAGE_COMPRESSION_RATIO;
 }
 
+/** 辺に沿った帯(端の色の指摘の場所)。inside: 仕上がりの内側の帯 / bleed: 塗り足しの帯 */
+function sideBand(l: PageLayout, side: 'top' | 'right' | 'bottom' | 'left', band: 'inside' | 'bleed', bleedMm: number): Rect {
+  const t = l.trim;
+  const o = l.bleed;
+  const w = mmToPt(bleedMm);
+  switch (side) {
+    case 'top':
+      return band === 'inside' ? rect(t.x0, t.y1 - w, t.x1, t.y1) : rect(o.x0, t.y1, o.x1, o.y1);
+    case 'bottom':
+      return band === 'inside' ? rect(t.x0, t.y0, t.x1, t.y0 + w) : rect(o.x0, o.y0, o.x1, t.y0);
+    case 'left':
+      return band === 'inside' ? rect(t.x0, t.y0, t.x0 + w, t.y1) : rect(o.x0, o.y0, t.x0, o.y1);
+    case 'right':
+      return band === 'inside' ? rect(t.x1 - w, t.y0, t.x1, t.y1) : rect(t.x1, o.y0, o.x1, o.y1);
+  }
+}
+
 function excerpt(text: string): string {
   const t = text.trim();
   return t.length > 12 ? `${t.slice(0, 12)}…` : t;
@@ -108,6 +141,15 @@ export function runChecks(pages: readonly PageFacts[], options: CheckOptions): P
   const findings: Finding[] = [];
   const add = (code: PrintCode, severity: Severity, pageIndexes: readonly number[], detail: string, marks: readonly Mark[] = []) =>
     findings.push({ code, severity, pages: pageIndexes, detail, marks });
+  /** 構造の解析で見つけた描画の注意を、場所の一覧にする(仕上がりの外だけのものは除く。トンボなどのため) */
+  const noteMarks = (kind: PaintNoteKind, markKind: Mark['kind'], label: (n: PaintNote) => string, onlyInTrim = true): Mark[] =>
+    pages.flatMap((p, i) =>
+      p.structure.notes
+        .filter((n) => n.kind === kind && (!onlyInTrim || intersects(n.bounds, layouts[i].trim)))
+        .map((n) => ({ page: i, rect: n.bounds, kind: markKind, label: label(n) })),
+    );
+  const pagesOf = (marks: readonly Mark[]) => [...new Set(marks.map((m) => m.page))].sort((a, b) => a - b);
+  const countDetail = (marks: readonly Mark[], unit = 'か所') => `${marks.length} ${unit}(${pageList(pagesOf(marks))} ページ目)`;
 
   // ---- サイズ ----
   const unknown = layouts.flatMap((l, i) => (l.kind === 'unknown' ? [i] : []));
@@ -151,6 +193,17 @@ export function runChecks(pages: readonly PageFacts[], options: CheckOptions): P
   });
   const describeSides = (items: { page: number; sides: string[] }[]) =>
     items.map((x) => `${x.page + 1} ページ目の${x.sides.join('・')}`).join('、');
+  const edgeMarks = (items: { page: number; sides: string[] }[], band: 'inside' | 'bleed'): Mark[] =>
+    items.flatMap((x) =>
+      (pages[x.page].edges ?? [])
+        .filter((s) => s.samples > 0 && s.missingBleed / s.samples > EDGE_PROBLEM_RATIO)
+        .map((s) => ({
+          page: x.page,
+          rect: sideBand(layouts[x.page], s.side, band, profile.bleedMm),
+          kind: 'area' as const,
+          label: `${SIDE_LABEL[displayedSide(s.side, pages[x.page].structure.rotation)]}の端`,
+        })),
+    );
   if (noBleed.length > 0) {
     const l = layouts[noBleed[0].page];
     const target = l.paper
@@ -161,10 +214,11 @@ export function runChecks(pages: readonly PageFacts[], options: CheckOptions): P
       'error',
       noBleed.map((x) => x.page),
       `${describeSides(noBleed)}の端まで色がありますが、塗り足しがありません。塗り足し込みのサイズ${target}にする必要があります。`,
+      edgeMarks(noBleed, 'inside'),
     );
   }
   if (whiteEdge.length > 0) {
-    add('PRINT_WHITE_EDGE', 'error', whiteEdge.map((x) => x.page), `${describeSides(whiteEdge)}で、仕上がり線の外側(塗り足し)が白く抜けています。`);
+    add('PRINT_WHITE_EDGE', 'error', whiteEdge.map((x) => x.page), `${describeSides(whiteEdge)}で、仕上がり線の外側(塗り足し)が白く抜けています。`, edgeMarks(whiteEdge, 'bleed'));
   }
 
   // ---- 文字の位置 ----
@@ -177,10 +231,10 @@ export function runChecks(pages: readonly PageFacts[], options: CheckOptions): P
     for (const box of p.textBoxes ?? []) {
       if (!intersects(box.rect, l.page)) continue; // ページの外(見えない文字)は対象外
       if (!containsRect(l.trim, box.rect, TEXT_TOLERANCE_PT)) {
-        outside.push({ page: i, rect: box.rect, kind: 'text' });
+        outside.push({ page: i, rect: box.rect, kind: 'text', label: `「${excerpt(box.text)}」` });
         outsideTexts.push(excerpt(box.text));
       } else if (!containsRect(l.safe, box.rect, TEXT_TOLERANCE_PT)) {
-        unsafe.push({ page: i, rect: box.rect, kind: 'text' });
+        unsafe.push({ page: i, rect: box.rect, kind: 'text', label: `「${excerpt(box.text)}」` });
         unsafeTexts.push(excerpt(box.text));
       }
     }
@@ -213,7 +267,7 @@ export function runChecks(pages: readonly PageFacts[], options: CheckOptions): P
   });
   if (notEmbedded.size > 0) {
     const pagesWith = [...new Set([...notEmbedded.values()].flat())].sort((a, b) => a - b);
-    add('PRINT_FONT_NOT_EMBEDDED', 'error', pagesWith, `埋め込まれていないフォント: ${[...notEmbedded.keys()].join('、')}`);
+    add('PRINT_FONT_NOT_EMBEDDED', 'error', pagesWith, `埋め込まれていないフォント: ${[...notEmbedded.keys()].join('、')}`, noteMarks('unembedded-font', 'text', (n) => n.label ?? ''));
   }
 
   // ---- 画像の解像度 ----
@@ -235,7 +289,8 @@ export function runChecks(pages: readonly PageFacts[], options: CheckOptions): P
     const max = Math.max(...values);
     return min === max ? `${min}ppi` : `${min}〜${max}ppi`;
   };
-  const imageMarks = (items: { page: number; rect: Rect }[]): Mark[] => items.map((x) => ({ page: x.page, rect: x.rect, kind: 'image' }));
+  const imageMarks = (items: { page: number; rect: Rect; dpi: number }[]): Mark[] =>
+    items.map((x) => ({ page: x.page, rect: x.rect, kind: 'image', label: `約 ${Math.round(x.dpi)}ppi` }));
   if (low.length > 0) {
     add('PRINT_IMAGE_LOW_DPI', 'warn', [...new Set(low.map((x) => x.page))], `${low.length} 個(${dpiRange(low)})`, imageMarks(low));
   }
@@ -288,7 +343,41 @@ export function runChecks(pages: readonly PageFacts[], options: CheckOptions): P
       invisible.length > 0
         ? `。そのうち ${pageList(invisible)} ページ目には、完全に透明な文字や図形があります(PowerPoint などが、画像にした文字の上に、検索用の見えない文字を重ねていることがあります。透明に対応していない印刷機では、これが濃く印刷されて文字が二重に見えることがあります)`
         : '';
-    add('PRINT_TRANSPARENCY', 'info', transparent, `${pageList(transparent)} ページ目${note}`);
+    add('PRINT_TRANSPARENCY', 'info', transparent, `${pageList(transparent)} ページ目${note}`, noteMarks('transparent', 'object', () => '透明効果'));
+  }
+
+  // ---- 線・オーバープリント・文字・インキ(D-033) ----
+  const mm = (v: number | undefined) => `${(v ?? 0).toFixed(2)}mm`;
+  const valuesOf = (kind: PaintNoteKind) => pages.flatMap((p) => p.structure.notes.filter((n) => n.kind === kind).map((n) => n.value ?? 0));
+  const zero = noteMarks('zero-width-line', 'object', () => '線幅 0');
+  if (zero.length > 0) add('PRINT_LINE_ZERO_WIDTH', 'error', pagesOf(zero), countDetail(zero, '本'), zero);
+  const thin = noteMarks('thin-line', 'object', (n) => `線幅 約 ${mm(n.value)}`);
+  if (thin.length > 0) {
+    const min = Math.min(...valuesOf('thin-line'));
+    add('PRINT_LINE_TOO_THIN', 'warn', pagesOf(thin), `${countDetail(thin, '本')}。いちばん細いもので約 ${mm(min)}(目安は ${THIN_LINE_MM}mm 以上)`, thin);
+  }
+  const fillOnly = noteMarks('fill-only-line', 'object', () => '塗りだけの線');
+  if (fillOnly.length > 0) add('PRINT_FILL_ONLY_LINE', 'warn', pagesOf(fillOnly), countDetail(fillOnly, '本'), fillOnly);
+  const whiteOp = noteMarks('white-overprint', 'object', () => '白のオーバープリント');
+  if (whiteOp.length > 0) add('PRINT_WHITE_OVERPRINT', 'error', pagesOf(whiteOp), countDetail(whiteOp), whiteOp);
+  const textLabel = (n: PaintNote) => `「${n.label ?? ''}」約 ${(n.value ?? 0).toFixed(1)}pt`;
+  const small = noteMarks('small-text', 'text', textLabel);
+  if (small.length > 0) add('PRINT_SMALL_TEXT', 'info', pagesOf(small), `${countDetail(small)}が、${SMALL_TEXT_PT}pt より小さい文字です。`, small);
+  const richBlack = noteMarks('rich-black-text', 'text', textLabel);
+  if (richBlack.length > 0) add('PRINT_RICH_BLACK_TEXT', 'warn', pagesOf(richBlack), countDetail(richBlack), richBlack);
+  const ink = noteMarks('ink-over', 'object', (n) => `総インキ量 ${n.value ?? 0}%`);
+  if (ink.length > 0) {
+    const max = Math.max(...valuesOf('ink-over'));
+    add('PRINT_INK_OVER_LIMIT', 'warn', pagesOf(ink), `${countDetail(ink)}。最大 ${max}%(目安は ${INK_LIMIT_PERCENT}% 以下)`, ink);
+  }
+  const registration = noteMarks('registration', 'object', () => 'レジストレーション');
+  if (registration.length > 0) add('PRINT_REGISTRATION_COLOR', 'warn', pagesOf(registration), countDetail(registration), registration);
+  const hiddenLayer = noteMarks('hidden-layer', 'object', () => '非表示のレイヤー', false);
+  if (hiddenLayer.length > 0) add('PRINT_HIDDEN_LAYER', 'warn', pagesOf(hiddenLayer), countDetail(hiddenLayer), hiddenLayer);
+  const spots = [...new Set(pages.flatMap((p) => p.structure.spotColors))];
+  if (spots.length > 0) {
+    const spotPages = pages.flatMap((p, i) => (p.structure.spotColors.length > 0 ? [i] : []));
+    add('PRINT_SPOT_COLOR', 'info', spotPages, `特色: ${spots.join('、')}(${pageList(spotPages)} ページ目)`);
   }
 
   findings.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);

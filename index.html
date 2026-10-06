@@ -199,6 +199,18 @@
           </div>
         </div>
         <p class="preview-mode-note" id="preview-mode-note" hidden></p>
+        <div class="preview-focus" id="preview-focus" hidden>
+          <button type="button" class="btn btn-icon btn-small" id="focus-prev" aria-label="前の場所">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
+          </button>
+          <span class="focus-count" id="focus-count"></span>
+          <button type="button" class="btn btn-icon btn-small" id="focus-next" aria-label="次の場所">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+          </button>
+          <span class="focus-label" id="focus-label"></span>
+          <button type="button" class="btn btn-small" id="focus-zoom" aria-pressed="false">拡大して見る</button>
+          <button type="button" class="btn btn-small" id="focus-clear">選択を解除</button>
+        </div>
         <div class="preview-stage">
           <canvas id="preview-canvas" role="img"></canvas>
         </div>
@@ -209,7 +221,9 @@
           <li><span class="swatch swatch-safe"></span>安全領域(文字はこの内側に)</li>
           <li><span class="swatch swatch-text"></span>指摘した文字</li>
           <li><span class="swatch swatch-image"></span>指摘した画像</li>
+          <li><span class="swatch swatch-object"></span>指摘した図形・場所</li>
         </ul>
+        <p class="preview-hint">指摘の「場所を見る」を押すと、対象をここで強調して示します。枠をクリックすると、その指摘を選べます。</p>
       </section>
     </main>
 

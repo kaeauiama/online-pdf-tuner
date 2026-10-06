@@ -43,6 +43,8 @@
 - `src/typo/` — 誤植修正(S1・試験的)。フォントの許諾(fsType)の確認は `src/pdf/fonts.ts`
 - `src/text/` — 文字入れ・ページ番号(M5)。`stamp.ts` が配置の計算、`fonts.ts` が同梱フォントの読み込み
 - `src/print/flatten.ts` / `flattenRender.ts` — 効果の焼き込み
+- `src/print/outline.ts` — 文字のアウトライン化(字形の読み出しは `src/pdf/glyphs.ts`)
+- `src/print/colorConvert.ts` — 色の調整(RGB のまま / K100 / CMYK、白のオーバープリントの解除)。変換表は `cmyk.ts` / `cmykLut.ts`(`scripts/build-cmyk-lut.mjs` で生成)、関数の評価は `src/pdf/functions.ts`、色空間は `src/pdf/colorspace.ts`
 - `src/editor/` — ページ内の編集(M6)。`elements.ts` が要素の取り出しと関連の推定、`edit.ts` が移動・削除の書き換え、`order.ts` が重なり順の入れ替え、`textEdit.ts` が文字の書き換え
 - `src/typo/localFonts.ts` — PC のフォントの読み取り(誤植修正の補い、Chrome / Edge のみ)
 - `src/app/` — 画面と操作(`app.ts` が編集画面、`editorView.ts` がページの中、`checkView.ts` が入稿チェック画面、`typoDialog.ts` が誤植修正)

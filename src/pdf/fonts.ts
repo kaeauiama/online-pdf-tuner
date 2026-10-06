@@ -88,15 +88,22 @@ export function loadFontForEdit(doc: PDFDocument, resourceName: string, fontObj:
       const w = lookup(cid.get(N('W')));
       if (w instanceof PDFArray) {
         const items = w.asArray().map(lookup);
+        const n = (o: PDFObject | undefined) => (o instanceof PDFNumber ? o.asNumber() : undefined);
+        // 形式の崩れた W は、読める所まで読む
         for (let i = 0; i < items.length; ) {
-          const first = (items[i] as PDFNumber).asNumber();
+          const first = n(items[i]);
           const next = items[i + 1];
+          if (first === undefined) break;
           if (next instanceof PDFArray) {
-            next.asArray().forEach((v, k) => widths.set(first + k, (lookup(v) as PDFNumber).asNumber()));
+            next.asArray().forEach((v, k) => {
+              const width = n(lookup(v));
+              if (width !== undefined) widths.set(first + k, width);
+            });
             i += 2;
           } else {
-            const last = (next as PDFNumber).asNumber();
-            const width = (items[i + 2] as PDFNumber).asNumber();
+            const last = n(next);
+            const width = n(items[i + 2]);
+            if (last === undefined || width === undefined) break;
             for (let c = first; c <= last; c++) widths.set(c, width);
             i += 3;
           }

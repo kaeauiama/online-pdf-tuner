@@ -36,3 +36,18 @@ export const GAMUT_STRONG_DELTA_C = 20;
 export const GAMUT_WARN_AREA_RATIO = 0.05;
 /** くすみ警告: くすみやすい色がこの割合以上なら INFO(これ未満は指摘しない) */
 export const GAMUT_INFO_AREA_RATIO = 0.005;
+
+/** 細すぎる線: 実効の線幅がこれ未満(mm)なら、かすれたり消えたりしやすい。印刷所の多くは 0.1mm(約 0.3pt)以上を求める */
+export const THIN_LINE_MM = 0.1;
+/** 小さすぎる文字(pt、実際に描かれる大きさ) */
+export const SMALL_TEXT_PT = 5;
+/** リッチブラック(複数のインキで作った黒)の文字を指摘する、文字の大きさの上限(pt) */
+export const RICH_BLACK_TEXT_MAX_PT = 12;
+/** リッチブラックとみなす CMYK: K がこれ以上で… */
+export const RICH_BLACK_MIN_K = 0.6;
+/** …C + M + Y がこれ以上 */
+export const RICH_BLACK_MIN_CMY = 0.15;
+/** 総インキ量(C + M + Y + K、%)の上限。Japan Color 2011 Coated は 350%。300% を求める印刷所もある */
+export const INK_LIMIT_PERCENT = 350;
+/** 1 ページ・1 種類あたりに記録する指摘の場所の上限(多すぎる場合は打ち切る) */
+export const MAX_NOTES_PER_KIND = 200;

@@ -7,10 +7,14 @@ import { parsePageRanges } from '../core/ranges.ts';
 import { analyzeForPrint, type PrintAnalysis } from '../print/analyze.ts';
 import type { Binding, CheckOptions, Finding, Mark, Severity } from '../print/checks.ts';
 import { blankPagesForSaddle, buildPrintReady, type BleedMethod, type FixResult, type RegionFit } from '../print/fix.ts';
+import { adjustColors, type ColorMode, type ColorPageResult } from '../print/colorConvert.ts';
+import { CMYK_LUT_SOURCE } from '../print/cmykLut.ts';
 import { flattenPdf } from '../print/flattenRender.ts';
+import { outlineText, type OutlineKeptReason, type OutlinePageResult } from '../print/outline.ts';
+import { decodeJpegInBrowser } from '../render/jpeg.ts';
 import { highlightOutOfGamut, simulatePrint } from '../print/gamut.ts';
 import { GAMUT_SOURCE } from '../print/gamutTable.ts';
-import { ptToMm, rectHeight, rectWidth, type Rect } from '../print/geometry.ts';
+import { mmToPt, ptToMm, rectArea, rectHeight, rectWidth, type Rect } from '../print/geometry.ts';
 import type { PageLayout } from '../print/layout.ts';
 import { PRINT_MESSAGES } from '../print/messages.ts';
 import { findPaperSize, formatSize, PAPER_SIZES } from '../print/paperSizes.ts';
@@ -45,7 +49,55 @@ const COLORS = {
   safe: '#1e9e5a',
   text: '#f08c00',
   image: '#7c4dff',
+  object: '#d6336c',
+  area: '#0b7285',
+  /** 選んだ場所以外を暗くする色 */
+  spotlight: 'rgba(16, 20, 28, 0.55)',
 };
+
+/** 選んだ場所が、ページの面積のこれ未満なら、自動で拡大して見せる */
+const AUTO_ZOOM_AREA_RATIO = 0.04;
+/** 拡大表示で、場所の周りに含める範囲(mm) */
+const ZOOM_MIN_WIDTH_MM = 45;
+const ZOOM_MIN_HEIGHT_MM = 32;
+
+/** 指摘の場所の説明(ページと、文字の内容・線幅など) */
+function markLabel(mark: Mark): string {
+  return `${mark.page + 1} ページ目${mark.label ? `・${mark.label}` : ''}`;
+}
+
+const KEPT_REASON: Record<OutlineKeptReason, string> = {
+  'not-embedded': 'フォントが埋め込まれていない',
+  restricted: 'フォントが埋め込みを許可していない',
+  unsupported: '対応していない形式のフォントの',
+  type3: '図形で描かれた(Type3)フォントの',
+  clip: '切り抜きに使われている',
+  'glyph-missing': 'フォントの中に字形が見つからない',
+  'unknown-font': 'フォントが分からない',
+};
+
+function outlineNotes(r: OutlinePageResult): string[] {
+  const notes: string[] = [];
+  if (r.glyphs > 0) notes.push(`文字をアウトライン化しました(${r.glyphs} 字)。`);
+  if (r.removedInvisible > 0) notes.push(`検索用の見えない文字 ${r.removedInvisible} 字は削除しました。`);
+  for (const k of r.kept) notes.push(`「${k.font}」は${KEPT_REASON[k.reason]}ため、文字のまま残しました${k.detail ? `(${k.detail})` : ''}。`);
+  return notes;
+}
+
+function colorNotes(r: ColorPageResult, mode: ColorMode, fallback: boolean): string[] {
+  const notes: string[] = [];
+  if (fallback) notes.push('このページには CMYK にそのまま変換できない部分があったため、文字以外を画像にしてから変換しました。');
+  if (mode === 'cmyk') {
+    const parts = [r.colors > 0 ? `色の指定 ${r.colors} か所` : '', r.images > 0 ? `画像 ${r.images} 個` : '', r.shadings > 0 ? `グラデーション ${r.shadings} 個` : ''].filter(Boolean);
+    notes.push(`色を CMYK(${CMYK_LUT_SOURCE})に変換しました${parts.length ? `(${parts.join('・')})` : ''}。黒やグレーの文字・線は K だけにしました。`);
+    if (r.unsupported.length > 0) notes.push(`${r.unsupported.join('・')}は変換できませんでした。`);
+  } else if (mode === 'k100' && r.colors > 0) {
+    notes.push(`黒やグレーの文字・線など ${r.colors} か所を、K だけの色にしました。`);
+  }
+  if (r.richBlackText > 0) notes.push(`リッチブラックの小さな文字 ${r.richBlackText} か所を K100 にしました。`);
+  if (r.whiteOverprint > 0) notes.push(`白のオーバープリント ${r.whiteOverprint} か所を解除しました。`);
+  return notes;
+}
 
 interface FixedState {
   readonly analysis: PrintAnalysis;
@@ -65,6 +117,10 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
   const previewNext = $<HTMLButtonElement>('#preview-next');
   const previewPanel = $<HTMLElement>('#check-preview');
   const previewModeNote = $<HTMLElement>('#preview-mode-note');
+  const focusBar = $<HTMLElement>('#preview-focus');
+  const focusCount = $<HTMLElement>('#focus-count');
+  const focusLabel = $<HTMLElement>('#focus-label');
+  const focusZoom = $<HTMLButtonElement>('#focus-zoom');
 
   /** 編集中のページのチェック結果 */
   let original: PrintAnalysis | null = null;
@@ -75,7 +131,63 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
   let stale = false;
   let previewPage = 0;
   let focused: Finding | null = null;
+  /** 選んだ指摘の、何番目の場所を見ているか */
+  let focusIndex = 0;
+  let zoomed = false;
   let renderToken = 0;
+  /** プレビューに描いた指摘の枠(クリックで指摘を選ぶため。キャンバスの画素) */
+  let drawnMarks: { finding: Finding; index: number; x: number; y: number; w: number; h: number }[] = [];
+
+  function clearFocus(): void {
+    focused = null;
+    focusIndex = 0;
+    zoomed = false;
+  }
+
+  /** 指摘の場所を選んで、プレビューで強調する */
+  function focusMark(f: Finding, index: number, scrollToPreview = true): void {
+    const analysis = current();
+    focused = f;
+    focusIndex = Math.max(0, Math.min(index, f.marks.length - 1));
+    const mark = f.marks[focusIndex];
+    if (mark) {
+      previewPage = mark.page;
+      const page = analysis?.report.layouts[mark.page]?.page;
+      zoomed = !!page && rectArea(mark.rect) < rectArea(page) * AUTO_ZOOM_AREA_RATIO;
+    } else if (f.pages.length > 0) {
+      previewPage = f.pages[0];
+    }
+    renderResults();
+    void renderPreview();
+    // 1 列の表示(狭い画面)では、プレビューが一覧の下にあるため、見える所まで動かす
+    if (scrollToPreview) {
+      const r = previewPanel.getBoundingClientRect();
+      if (r.top > window.innerHeight || r.bottom < 0) previewPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+
+  $<HTMLButtonElement>('#focus-prev').addEventListener('click', () => focused && focusMark(focused, (focusIndex - 1 + focused.marks.length) % focused.marks.length));
+  $<HTMLButtonElement>('#focus-next').addEventListener('click', () => focused && focusMark(focused, (focusIndex + 1) % focused.marks.length));
+  focusZoom.addEventListener('click', () => {
+    zoomed = !zoomed;
+    void renderPreview();
+  });
+  $<HTMLButtonElement>('#focus-clear').addEventListener('click', () => {
+    clearFocus();
+    renderResults();
+    void renderPreview();
+  });
+  previewCanvas.addEventListener('click', (ev) => {
+    const r = previewCanvas.getBoundingClientRect();
+    const ratio = previewCanvas.width / Math.max(1, r.width);
+    const x = (ev.clientX - r.left) * ratio;
+    const y = (ev.clientY - r.top) * ratio;
+    // 小さい枠を優先する(大きな枠の中の小さな対象を選べるように)
+    const hit = drawnMarks.filter((m) => x >= m.x && x <= m.x + m.w && y >= m.y && y <= m.y + m.h).sort((a, b) => a.w * a.h - b.w * b.h)[0];
+    if (!hit) return;
+    focusMark(hit.finding, hit.index, false);
+    results.querySelector('.finding.is-focused')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
 
   const current = (): PrintAnalysis | null => fixed?.analysis ?? original;
 
@@ -158,7 +270,7 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
       original = next;
       checkedOptions = options;
       stale = false;
-      focused = null;
+      clearFocus();
       const firstProblem = next.report.findings.find((f) => f.severity !== 'info' && f.pages.length > 0);
       previewPage = firstProblem?.pages[0] ?? 0;
       renderResults();
@@ -200,6 +312,9 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
     const flatten = data.get('flatten') === 'on';
     const flattenAll = data.get('flattenPages') === 'all';
     const flattenDpi = Number(data.get('flattenDpi') ?? 350);
+    const outline = data.get('outline') === 'on';
+    const colorMode = (data.get('color') ?? 'rgb') as ColorMode;
+    const fixWhiteOverprint = data.get('fixWhiteOverprint') === 'on';
 
     await ui.run('入稿用 PDF を作っています…', async (progress) => {
       // 効果の焼き込みは、塗り足しを作る前に行う(元の大きさのページで描画する)
@@ -225,6 +340,48 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
           }
         }
       }
+      // 色の調整と文字のアウトライン化(D-035 / D-034)。色を先に調整する(リッチブラックの文字を K100 にするには、
+      // 文字が文字のままである必要があるため)。CMYK にそのまま変換できない部分があるページは、
+      // 焼き込み(文字以外を画像に)にしてから、変換とアウトライン化をやり直す
+      const extraNotes = new Map<number, string[]>();
+      const finishText = async (bytes: Uint8Array, fallbackPages: ReadonlySet<number>) => {
+        let out = bytes;
+        const notes = new Map<number, string[]>();
+        const push = (page: number, n: string[]) => notes.set(page, [...(notes.get(page) ?? []), ...n]);
+        let unsupported: number[] = [];
+        if (colorMode !== 'rgb' || fixWhiteOverprint) {
+          const r = await adjustColors(out, { mode: colorMode, fixWhiteOverprint, decodeJpeg: decodeJpegInBrowser }, progress);
+          out = r.bytes;
+          for (const pr of r.pages) push(pr.page, colorNotes(pr, colorMode, fallbackPages.has(pr.page)));
+          unsupported = colorMode === 'cmyk' ? r.pages.filter((x) => x.unsupported.length > 0 && !fallbackPages.has(x.page)).map((x) => x.page) : [];
+          if (unsupported.length > 0) return { out, notes, unsupported };
+        }
+        if (outline) {
+          const r = await outlineText(out, 'all', progress);
+          out = r.bytes;
+          const textFindings = new Set(
+            source.report.findings
+              .filter((x) => ['PRINT_TEXT_OUTSIDE_TRIM', 'PRINT_TEXT_IN_UNSAFE_AREA', 'PRINT_SMALL_TEXT', 'PRINT_RICH_BLACK_TEXT'].includes(x.code))
+              .flatMap((x) => x.pages),
+          );
+          for (const pr of r.pages) {
+            push(pr.page, outlineNotes(pr));
+            if (pr.glyphs > 0 && textFindings.has(pr.page)) {
+              push(pr.page, ['文字を図形にしたため、文字の位置や大きさの確認は、元の PDF の結果を参考にしてください。']);
+            }
+          }
+        }
+        return { out, notes, unsupported };
+      };
+      let finished = await finishText(input, new Set());
+      if (finished.unsupported.length > 0) {
+        const fallback = new Set(finished.unsupported);
+        const flattened = await flattenPdf(input, fallback, flattenDpi, progress);
+        finished = await finishText(flattened.bytes, fallback);
+      }
+      input = finished.out;
+      for (const [page, notes] of finished.notes) extraNotes.set(page, notes);
+
       progress('入稿用 PDF を作っています…');
       const doc = await loadPdfForEditOrThrow(input);
       const built = await buildPrintReady(doc, source.report.layouts, {
@@ -237,7 +394,10 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
       });
       const result: FixResult = {
         ...built,
-        pages: built.pages.map((p) => (flattenNotes.has(p.page) ? { ...p, notes: [flattenNotes.get(p.page)!, ...p.notes] } : p)),
+        pages: built.pages.map((p) => ({
+          ...p,
+          notes: [...(flattenNotes.has(p.page) ? [flattenNotes.get(p.page)!] : []), ...(extraNotes.get(p.page) ?? []), ...p.notes],
+        })),
       };
       progress('入稿用 PDF を確認しています…');
       // TrimBox を書き込んだので、仕上がりサイズは自動判定で正しく読める
@@ -245,7 +405,7 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
       await discardFixed();
       const first = store.activeSources()[0];
       fixed = { analysis, result, fileName: `${first ? baseName(first.name) : 'document'}_入稿用.pdf` };
-      focused = null;
+      clearFocus();
       previewPage = 0;
       renderResults();
       await renderPreview();
@@ -365,6 +525,52 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
     );
     flattenSet.append(el('legend', '', '効果の焼き込み'), flattenLine, flattenSub);
     f.append(flattenSet);
+
+    const checkbox = (name: string, label: string, hint: string, checked: boolean) => {
+      const line = el('label', 'fix-option');
+      const input = el('input');
+      input.type = 'checkbox';
+      input.name = name;
+      input.checked = checked;
+      const text = el('span', 'fix-option-text');
+      text.append(el('span', 'fix-option-label', label), el('span', 'fix-option-hint', hint));
+      line.append(input, text);
+      return line;
+    };
+
+    // 文字のアウトライン化(D-034)
+    const textSet = el('fieldset', 'fix-fieldset');
+    textSet.id = 'outline-fieldset';
+    textSet.append(
+      el('legend', '', '文字'),
+      checkbox(
+        'outline',
+        '文字をアウトライン化する',
+        '文字を、フォントの形どおりの図形に置き換えます。印刷所のパソコンにフォントがなくても、見えているとおりに刷られます。入稿用のファイルの文字は、検索やコピーができなくなります(元のファイルは変わりません)。フォントが「埋め込み不可」としているものは、文字のまま残します。',
+        false,
+      ),
+    );
+    f.append(textSet);
+
+    // 色(D-035)
+    const colorSet = el('fieldset', 'fix-fieldset');
+    colorSet.id = 'color-fieldset';
+    colorSet.append(
+      el('legend', '', '色'),
+      radio('color', 'rgb', 'RGB のまま', '多くの印刷所はこのまま受け付け、印刷所で CMYK に変換します。', true),
+      radio('color', 'k100', '黒い文字と線を K100 にする(ほかの色はそのまま)', '黒やグレーの文字・線を K(黒インキ)だけの色にします。小さな文字が 4 色の版ズレでにじむのを防ぎます。', false),
+      radio(
+        'color',
+        'cmyk',
+        `CMYK に変換する(${CMYK_LUT_SOURCE})`,
+        'CMYK での入稿を求められたときに。プレビューの「印刷の目安」と同じ基準で変換します。黒やグレーの文字・線は K だけにします。写真などは CMYK の画像になり、ファイルが大きくなることがあります。',
+        false,
+      ),
+    );
+    if (analysis.report.findings.some((x) => x.code === 'PRINT_WHITE_OVERPRINT')) {
+      colorSet.append(checkbox('fixWhiteOverprint', '白のオーバープリントを解除する', '白に設定されたオーバープリントを外し、白が印刷されるようにします。', true));
+    }
+    f.append(colorSet);
     const syncFlatten = () => (flattenSub.hidden = !flattenCheck.checked);
     flattenCheck.addEventListener('change', syncFlatten);
     syncFlatten();
@@ -402,6 +608,7 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
     back.type = 'button';
     back.addEventListener('click', async () => {
       await discardFixed();
+      clearFocus();
       previewPage = 0;
       renderResults();
       await renderPreview();
@@ -524,6 +731,36 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
       });
       return b;
     }
+    const goToOption = (label: string, selector: string, apply: (set: HTMLElement) => void) => {
+      const b = el('button', 'btn finding-action', label);
+      b.type = 'button';
+      b.addEventListener('click', () => {
+        const set = document.querySelector<HTMLElement>(selector);
+        if (!set) return;
+        apply(set);
+        set.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+      return b;
+    };
+    if (f.code === 'PRINT_WHITE_OVERPRINT') {
+      return goToOption('解除する(下の「入稿用 PDF を作る」へ)', '#color-fieldset', (set) => {
+        const c = set.querySelector<HTMLInputElement>('input[name="fixWhiteOverprint"]');
+        if (c) c.checked = true;
+      });
+    }
+    if (f.code === 'PRINT_RICH_BLACK_TEXT') {
+      return goToOption('K100 にする(下の「入稿用 PDF を作る」へ)', '#color-fieldset', (set) => {
+        const cmyk = set.querySelector<HTMLInputElement>('input[name="color"][value="cmyk"]');
+        const r = set.querySelector<HTMLInputElement>('input[name="color"][value="k100"]');
+        if (r && !cmyk?.checked) r.checked = true;
+      });
+    }
+    if (f.code === 'PRINT_RGB_CONTENT' || f.code === 'PRINT_SPOT_COLOR') {
+      return goToOption('CMYK に変換する(下の「入稿用 PDF を作る」へ)', '#color-fieldset', (set) => {
+        const r = set.querySelector<HTMLInputElement>('input[name="color"][value="cmyk"]');
+        if (r) r.checked = true;
+      });
+    }
     if (f.code === 'PRINT_PAGE_COUNT_SADDLE' && original) {
       const n = blankPagesForSaddle(original.report.layouts.length);
       const b = el('button', 'btn finding-action', `白紙を ${n} ページ足す(最後のページの前に)`);
@@ -539,14 +776,43 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
     const item = el('li', `finding sev-${f.severity}`);
     if (focused === f) item.classList.add('is-focused');
     const head = el('div', 'finding-head');
-    head.append(el('span', `sev-badge sev-${f.severity}`, SEVERITY_LABEL[f.severity]), el('h3', 'finding-title', m.title));
+    const title = el('h3', 'finding-title', m.title);
+    if (f.marks.length > 0 || f.pages.length > 0) {
+      // 見出しを押しても、対象の場所を表示する
+      const titleButton = el('button', 'finding-title-button');
+      titleButton.type = 'button';
+      titleButton.append(title);
+      titleButton.addEventListener('click', () => focusMark(f, 0));
+      head.append(el('span', `sev-badge sev-${f.severity}`, SEVERITY_LABEL[f.severity]), titleButton);
+    } else {
+      head.append(el('span', `sev-badge sev-${f.severity}`, SEVERITY_LABEL[f.severity]), title);
+    }
     item.append(head, el('p', 'finding-detail', f.detail), el('p', 'finding-why', m.why));
     const fix = el('details', 'finding-fix');
     fix.append(el('summary', '', '直し方'), el('p', '', m.fix));
     item.append(fix);
     const action = findingAction(f);
     if (action) item.append(action);
-    if (f.pages.length > 0) {
+    if (f.marks.length > 0) {
+      // 場所の一覧: 選ぶと、プレビューでその対象だけを明るく残して示す
+      const locate = el('div', 'finding-locate');
+      if (focused === f) {
+        const prev = el('button', 'btn btn-small', '前へ');
+        prev.type = 'button';
+        prev.addEventListener('click', () => focusMark(f, (focusIndex - 1 + f.marks.length) % f.marks.length));
+        const next = el('button', 'btn btn-small', '次へ');
+        next.type = 'button';
+        next.addEventListener('click', () => focusMark(f, (focusIndex + 1) % f.marks.length));
+        const mark = f.marks[focusIndex];
+        locate.append(prev, el('span', 'focus-count', `${focusIndex + 1} / ${f.marks.length}`), next, el('span', 'locate-label', markLabel(mark)));
+      } else {
+        const show = el('button', 'btn btn-small', f.marks.length > 1 ? `場所を見る(${f.marks.length} か所)` : '場所を見る');
+        show.type = 'button';
+        show.addEventListener('click', () => focusMark(f, 0));
+        locate.append(show);
+      }
+      item.append(locate);
+    } else if (f.pages.length > 0) {
       const pages = el('div', 'finding-pages');
       pages.append(el('span', '', 'ページ:'));
       for (const p of f.pages.slice(0, 30)) {
@@ -610,12 +876,27 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
     const stage = previewCanvas.parentElement!;
     const maxW = Math.max(200, stage.clientWidth - 24);
     const maxH = Math.max(240, window.innerHeight - 260);
-    const cssScale = Math.min(maxW / base.width, maxH / base.height);
+
+    // 選んだ場所(このページにあるとき)
+    const focusMarkHere = focused?.marks[focusIndex]?.page === previewPage ? focused.marks[focusIndex] : undefined;
+    // 拡大表示: 選んだ場所の周りだけを、プレビューの枠いっぱいに描く(scale 1 の画素での範囲)
+    let region = { x: 0, y: 0, w: base.width, h: base.height };
+    if (zoomed && focusMarkHere) {
+      const r = toViewportRect(base, focusMarkHere.rect);
+      const w = Math.min(base.width, Math.max(r.w * 3, mmToPt(ZOOM_MIN_WIDTH_MM)));
+      const h = Math.min(base.height, Math.max(r.h * 3, mmToPt(ZOOM_MIN_HEIGHT_MM)));
+      const x = Math.min(Math.max(0, r.x + r.w / 2 - w / 2), base.width - w);
+      const y = Math.min(Math.max(0, r.y + r.h / 2 - h / 2), base.height - h);
+      region = { x, y, w, h };
+    }
+    const cssScale = Math.min(maxW / region.w, maxH / region.h);
     const viewport = page.getViewport({ scale: cssScale * ratio });
+    const ox = region.x * cssScale * ratio;
+    const oy = region.y * cssScale * ratio;
     const canvas = document.createElement('canvas');
-    canvas.width = Math.round(viewport.width);
-    canvas.height = Math.round(viewport.height);
-    await page.render({ canvas, viewport }).promise;
+    canvas.width = Math.round(region.w * cssScale * ratio);
+    canvas.height = Math.round(region.h * cssScale * ratio);
+    await page.render({ canvas, viewport, transform: [1, 0, 0, 1, -ox, -oy] }).promise;
     if (token !== renderToken) return; // 描画中に別のページが選ばれた
 
     const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
@@ -628,7 +909,11 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
     previewModeNote.textContent = MODE_NOTE[mode];
     previewModeNote.hidden = mode === 'normal';
     const layout = report.layouts[previewPage];
-    const toPx = (r: Rect) => toViewportRect(viewport, r);
+    // 重ね描きは、拡大表示の範囲の分だけずらす
+    const toPx = (r: Rect) => {
+      const v = toViewportRect(viewport, r);
+      return { x: v.x - ox, y: v.y - oy, w: v.w, h: v.h };
+    };
     const page_ = toPx(layout.page);
     const trim = toPx(layout.trim);
     const bleed = toPx(layout.bleed);
@@ -655,17 +940,58 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
     ctx.strokeRect(safe.x, safe.y, safe.w, safe.h);
     ctx.setLineDash([]);
 
-    // 「情報」の指摘の枠は、その指摘を選んだときだけ描く(常に描くとプレビューが見づらくなるため)
-    const marks: Mark[] = report.findings
-      .filter((f) => f.severity !== 'info' || f === focused)
-      .flatMap((f) => f.marks.filter((m) => m.page === previewPage));
-    const focusedMarks = new Set(focused?.marks ?? []);
-    for (const mark of marks) {
-      const r = toPx(mark.rect);
-      const pad = 2 * ratio;
-      ctx.lineWidth = (focusedMarks.has(mark) ? 3 : 1.5) * ratio;
-      ctx.strokeStyle = mark.kind === 'text' ? COLORS.text : COLORS.image;
-      ctx.strokeRect(r.x - pad, r.y - pad, r.w + pad * 2, r.h + pad * 2);
+    // 指摘の枠: 指摘を選んでいれば、その指摘の枠だけを描く。選んでいなければ、「情報」以外の指摘の枠を描く
+    const pad = 2 * ratio;
+    drawnMarks = [];
+    const shown = focused ? [focused] : report.findings.filter((f) => f.severity !== 'info');
+    for (const f of shown) {
+      f.marks.forEach((mark, index) => {
+        if (mark.page !== previewPage || mark === focusMarkHere) return;
+        const r = toPx(mark.rect);
+        ctx.lineWidth = 1.5 * ratio;
+        ctx.strokeStyle = COLORS[mark.kind];
+        ctx.strokeRect(r.x - pad, r.y - pad, r.w + pad * 2, r.h + pad * 2);
+        drawnMarks.push({ finding: f, index, x: r.x - pad * 2, y: r.y - pad * 2, w: r.w + pad * 4, h: r.h + pad * 4 });
+      });
+    }
+    if (focusMarkHere && focused) {
+      // 選んだ場所だけを明るく残し、それ以外を暗くする(スポットライト)
+      const r = toPx(focusMarkHere.rect);
+      const hole = { x: r.x - pad * 3, y: r.y - pad * 3, w: r.w + pad * 6, h: r.h + pad * 6 };
+      ctx.save();
+      ctx.fillStyle = COLORS.spotlight;
+      ctx.beginPath();
+      ctx.rect(0, 0, canvas.width, canvas.height);
+      ctx.rect(hole.x, hole.y, hole.w, hole.h);
+      ctx.fill('evenodd');
+      ctx.lineWidth = 3 * ratio;
+      ctx.strokeStyle = COLORS[focusMarkHere.kind];
+      ctx.strokeRect(hole.x, hole.y, hole.w, hole.h);
+      // 場所の説明を、枠の上(入らなければ下)に添える
+      const text = markLabel(focusMarkHere);
+      ctx.font = `${12 * ratio}px system-ui, sans-serif`;
+      const tw = ctx.measureText(text).width + 12 * ratio;
+      const th = 20 * ratio;
+      const tx = Math.min(Math.max(0, hole.x), Math.max(0, canvas.width - tw));
+      const ty = hole.y - th - 4 * ratio >= 0 ? hole.y - th - 4 * ratio : Math.min(canvas.height - th, hole.y + hole.h + 4 * ratio);
+      ctx.fillStyle = COLORS[focusMarkHere.kind];
+      ctx.fillRect(tx, ty, tw, th);
+      ctx.fillStyle = '#ffffff';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, tx + 6 * ratio, ty + th / 2);
+      ctx.restore();
+      drawnMarks.push({ finding: focused, index: focusIndex, x: hole.x, y: hole.y, w: hole.w, h: hole.h });
+    }
+    previewCanvas.classList.toggle('has-marks', drawnMarks.length > 0);
+
+    // 選んだ指摘の場所の操作
+    focusBar.hidden = !focused || focused.marks.length === 0;
+    if (focused && focused.marks.length > 0) {
+      focusCount.textContent = `${focusIndex + 1} / ${focused.marks.length}`;
+      focusLabel.textContent = `${PRINT_MESSAGES[focused.code].title}: ${markLabel(focused.marks[focusIndex])}`;
+      focusZoom.disabled = !focusMarkHere;
+      focusZoom.setAttribute('aria-pressed', String(zoomed && !!focusMarkHere));
+      focusZoom.textContent = zoomed && focusMarkHere ? 'ページ全体を見る' : '拡大して見る';
     }
 
     previewCanvas.width = canvas.width;
