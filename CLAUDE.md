@@ -42,6 +42,9 @@
 - `src/print/` — 入稿チェック。`profiles.ts`(印刷所ごとの値)と `thresholds.ts`(共通の閾値)が単一ソース
 - `src/typo/` — 誤植修正(S1・試験的)。フォントの許諾(fsType)の確認は `src/pdf/fonts.ts`
 - `src/app/` — 画面と操作(`app.ts` が編集画面、`checkView.ts` が入稿チェック画面、`typoDialog.ts` が誤植修正)
+- `src/sw/sw-template.js` — サービスワーカー(M4)。ビルド時に `vite.config.ts` が `dist/sw.js` を書き出す
+- `src/app/pwa.ts` — サービスワーカーの登録・更新の通知・ファイルハンドラ・インストール
+- `public/fonts/` — 文字入れ用の日本語フォント(BIZ UDPゴシック、OFL)。`scripts/build-fonts.py` で生成
 - `scripts/inspect-pdf.mjs` — PDF の構造を調べる開発用ツール
 
 ## 進め方

@@ -4,7 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="referrer" content="no-referrer" />
+    <meta name="theme-color" content="#1f5fbf" />
     <title>PDF 作業台</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>
@@ -21,6 +24,9 @@
         <button type="button" role="tab" class="mode-tab" data-mode-tab="edit" aria-controls="edit-view">ページの編集</button>
         <button type="button" role="tab" class="mode-tab" data-mode-tab="check" aria-controls="check-view">入稿チェック</button>
       </nav>
+      <button type="button" class="btn install-button" id="install-app" hidden title="インストールすると、オフラインでも使え、PDF を「プログラムから開く」で開けます">
+        アプリとして使う
+      </button>
       <button type="button" class="privacy-badge" id="privacy-open">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <rect x="5" y="11" width="14" height="10" rx="2" />
@@ -171,6 +177,11 @@
 
     <div class="toasts" id="toasts" aria-live="polite"></div>
 
+    <div class="update-banner" id="update-banner" role="status" hidden>
+      <span>新しい版があります。</span>
+      <button type="button" class="btn btn-primary" id="update-apply">更新する</button>
+    </div>
+
     <dialog id="split-dialog" class="dialog">
       <form method="dialog" id="split-form">
         <h2>分割して保存</h2>
@@ -239,6 +250,10 @@
             コンテンツ セキュリティ ポリシー(CSP)という仕組みで、このサイトから外部への通信をブラウザ自身に禁止させています。
           </li>
         </ul>
+        <p class="dialog-note">
+          一度開くと、必要なファイルがこの PC に保存され、インターネットにつながっていなくても使えます。
+          Chrome / Edge では「アプリとして使う」でインストールすると、PDF を右クリックして「プログラムから開く」で開けます。
+        </p>
         <p class="dialog-note">
           パスワードや編集制限がかかった PDF は扱いません。保護を解除する機能は、意図して用意していません。
         </p>

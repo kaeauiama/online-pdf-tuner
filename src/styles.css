@@ -1375,3 +1375,28 @@ svg {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------- PWA(M4) ---------- */
+
+.install-button {
+  margin-left: auto;
+  height: 30px;
+  font-size: 13px;
+}
+
+.update-banner {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  z-index: 40;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px 10px 16px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  font-size: 14px;
+}

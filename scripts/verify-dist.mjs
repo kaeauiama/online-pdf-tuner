@@ -36,6 +36,21 @@ if (!cspMatch) {
   }
 }
 
+// 1b. Service Worker とマニフェスト(M4)
+try {
+  const sw = readFileSync(join(dist, 'sw.js'), 'utf8');
+  if (sw.includes('__VERSION__') || sw.includes('__PRECACHE__')) failures.push('sw.js: 版または事前キャッシュの一覧が埋め込まれていない');
+  if (/https?:\/\//.test(sw)) failures.push('sw.js: URL が含まれている(Service Worker から外部に通信するコードは書かない)');
+} catch {
+  failures.push('sw.js がない');
+}
+try {
+  const manifest = JSON.parse(readFileSync(join(dist, 'manifest.webmanifest'), 'utf8'));
+  if (JSON.stringify(manifest).match(/https?:\/\//)) failures.push('manifest.webmanifest: 外部の URL が含まれている');
+} catch {
+  failures.push('manifest.webmanifest がない、または JSON として読めない');
+}
+
 // 2. 外部オリジンからの読み込み
 const EXTERNAL = String.raw`(?:https?:)?//[^\s"'()]+`;
 const patterns = [

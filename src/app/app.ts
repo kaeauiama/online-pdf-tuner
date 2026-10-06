@@ -17,6 +17,7 @@ import { setupCheckView } from './checkView.ts';
 import { downloadBytes } from './download.ts';
 import { Store } from './store.ts';
 import { Thumbnails } from './thumbnails.ts';
+import { setupPwa } from './pwa.ts';
 import { setupTypoDialog } from './typoDialog.ts';
 import { $, createUi, el } from './ui.ts';
 
@@ -433,6 +434,7 @@ export function startApp(): void {
 
   setupCheckView(store, { toast, toastReason, run }, () => setMode('edit'));
   setupTypoDialog(store, { toast, toastReason, run });
+  setupPwa({ toast, toastReason, run }, addFiles);
 
   store.subscribe(render);
   setMode('edit');
