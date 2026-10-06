@@ -43,6 +43,8 @@ test('一連の操作の間、外部オリジンへのリクエストが 0 件�
   // ページの中(要素の取り出し・描画・移動・適用)
   await page.click('[data-mode-tab="editor"]');
   await page.locator('.layer-row').first().click();
+  // プレビューの描画が終わってから(位置の欄が出てから)キーで動かす
+  await expect(page.locator('#editor-props .props-form')).toBeVisible();
   await page.locator('#editor-stage').focus();
   await page.keyboard.press('ArrowRight');
   await page.click('#editor-apply');

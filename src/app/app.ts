@@ -77,6 +77,8 @@ export function startApp(): void {
       : '';
     setEnabled('select-all', hasPages);
     setEnabled('select-none', hasSelection);
+    $<HTMLElement>('#page-total').textContent = hasPages ? `/ ${pages.length}` : '';
+    $<HTMLInputElement>('#page-jump').max = String(pages.length);
     for (const action of ['rotate-left', 'rotate-right', 'move-prev', 'move-next', 'delete', 'save-selected']) {
       setEnabled(action, hasSelection);
     }
@@ -109,11 +111,17 @@ export function startApp(): void {
     const check = el('input', 'card-check');
     check.type = 'checkbox';
 
+    const open = el('button', 'card-open');
+    open.type = 'button';
+    open.title = '「ページの中」で開く(ダブルクリックでも開けます)';
+    open.setAttribute('aria-label', '「ページの中」で開く');
+    open.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 13 9 5 9-5"/></svg>';
+
     const meta = el('div', 'card-meta');
     meta.append(el('span', 'card-num'), el('span', 'card-src', `${source.name} · p.${page.pageIndex + 1}`));
     meta.title = `${source.name} の ${page.pageIndex + 1} ページ目`;
 
-    card.append(thumb, check, meta);
+    card.append(thumb, check, open, meta);
     thumbs.observe(card, canvas, page.sourceId, page.pageIndex);
     return card;
   }
@@ -154,10 +162,13 @@ export function startApp(): void {
 
   // ---------- 画面の切り替え ----------
 
-  async function setMode(mode: Mode): Promise<void> {
+  /** 画面を切り替える。page: 「ページの中」で開くページ(編集画面の並びでの位置) */
+  async function setMode(mode: Mode, page?: number): Promise<void> {
     const current = document.body.dataset.mode as Mode | undefined;
     // 「ページの中」で適用していない変更があれば、離れる前に「適用 / 破棄 / 残る」を選んでもらう
     if (current === 'editor' && mode !== 'editor' && !(await editor.confirmLeave())) return;
+    // 「ページの中」から編集画面に戻ったら、開いていたページを選んで見せる
+    const editedPage = current === 'editor' && mode === 'edit' ? editor.currentPage() : undefined;
     document.body.dataset.mode = mode;
     for (const tab of document.querySelectorAll<HTMLButtonElement>('[data-mode-tab]')) {
       const selected = tab.dataset.modeTab === mode;
@@ -167,7 +178,73 @@ export function startApp(): void {
     $<HTMLElement>('#edit-view').hidden = mode !== 'edit';
     $<HTMLElement>('#editor-view').hidden = mode !== 'editor';
     $<HTMLElement>('#check-view').hidden = mode !== 'check';
-    if (mode === 'editor') editor.show();
+    if (mode === 'editor') editor.show(page);
+    measure();
+    if (editedPage !== undefined && store.pages[editedPage]) locatePage(editedPage);
+  }
+
+  /** 一覧のページを選び、見える位置まで動かして一瞬強調する */
+  function locatePage(index: number): void {
+    const ref = store.pages[index];
+    if (!ref) return;
+    store.select([ref.key], ref.key);
+    const card = cards.get(ref.key);
+    if (!card) return;
+    card.scrollIntoView({ block: 'center' });
+    card.classList.remove('is-located');
+    void card.offsetWidth; // アニメーションをやり直す
+    card.classList.add('is-located');
+  }
+
+  function openInEditor(key: string): void {
+    const index = store.pages.findIndex((p) => p.key === key);
+    if (index >= 0) void setMode('editor', index);
+  }
+
+  // 固定したヘッダーとツールバーの高さを、CSS から使えるようにする(sticky の位置・スクロールの余白)
+  const header = $<HTMLElement>('.app-header');
+  const toolbar = $<HTMLElement>('#edit-view .toolbar');
+  const measure = () => {
+    const root = document.documentElement.style;
+    const fixed = getComputedStyle(header).position === 'sticky';
+    root.setProperty('--header-h', `${fixed ? header.offsetHeight : 0}px`);
+    root.setProperty('--toolbar-h', `${document.body.dataset.mode === 'edit' ? toolbar.offsetHeight : 0}px`);
+  };
+  new ResizeObserver(measure).observe(header);
+  new ResizeObserver(measure).observe(toolbar);
+
+  // 一覧の表示: ページへ移動・サムネイルの大きさ(大きさは、この PC のブラウザに覚えておく)
+  const jump = $<HTMLInputElement>('#page-jump');
+  jump.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const n = Math.round(Number(jump.value));
+    if (!Number.isFinite(n) || n < 1 || n > store.pages.length) {
+      toast(`1〜${store.pages.length} の番号を入れてください。`, 'error');
+      return;
+    }
+    locatePage(n - 1);
+  });
+  const SIZE_KEY = 'pdf-workbench:thumb-size';
+  const applySize = (size: string) => {
+    grid.dataset.size = size;
+    const radio = document.querySelector<HTMLInputElement>(`input[name="thumb-size"][value="${size}"]`);
+    if (radio) radio.checked = true;
+  };
+  try {
+    applySize(localStorage.getItem(SIZE_KEY) === 'small' ? 'small' : 'normal');
+  } catch {
+    applySize('normal');
+  }
+  for (const radio of document.querySelectorAll<HTMLInputElement>('input[name="thumb-size"]')) {
+    radio.addEventListener('change', () => {
+      applySize(radio.value);
+      try {
+        localStorage.setItem(SIZE_KEY, radio.value);
+      } catch {
+        // 保存できなくても、表示は切り替わる
+      }
+    });
   }
 
   for (const tab of document.querySelectorAll<HTMLButtonElement>('[data-mode-tab]')) {
@@ -313,6 +390,10 @@ export function startApp(): void {
     const card = target.closest<HTMLLIElement>('.page-card');
     if (!card) return;
     const key = card.dataset.key!;
+    if (target.closest('.card-open')) {
+      openInEditor(key);
+      return;
+    }
     const toggle = target.classList.contains('card-check') || e.ctrlKey || e.metaKey;
     if (e.shiftKey && store.anchor) {
       const range = keysBetween(store.pages, store.anchor, key);
@@ -325,6 +406,22 @@ export function startApp(): void {
     } else {
       store.select([key], key);
     }
+  });
+
+  // カードのダブルクリック: そのページを「ページの中」で開く
+  grid.addEventListener('dblclick', (e) => {
+    const card = (e.target as Element).closest<HTMLLIElement>('.page-card');
+    if (!card || (e.target as Element).closest('.card-check, .card-open')) return;
+    openInEditor(card.dataset.key!);
+  });
+
+  // Alt+1〜3: 画面の切り替え(どの画面からでも)
+  document.addEventListener('keydown', (e) => {
+    if (!e.altKey || e.ctrlKey || e.metaKey || document.querySelector('dialog[open]')) return;
+    const mode = ({ '1': 'edit', '2': 'editor', '3': 'check' } as const)[e.key as '1' | '2' | '3'];
+    if (!mode) return;
+    e.preventDefault();
+    void setMode(mode);
   });
 
   document.addEventListener('keydown', (e) => {
@@ -347,6 +444,10 @@ export function startApp(): void {
       actions.delete();
     } else if (e.key === 'Escape' && store.selection.size > 0) {
       actions['select-none']();
+    } else if (e.key === 'Enter' && !mod && store.selection.size === 1 && !target.closest('button, a, input')) {
+      // 1 ページだけ選んでいるとき: そのページを「ページの中」で開く
+      e.preventDefault();
+      openInEditor([...store.selection][0]);
     }
   });
 

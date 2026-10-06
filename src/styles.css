@@ -73,6 +73,10 @@ svg {
 /* ---------- ヘッダー ---------- */
 
 .app-header {
+  /* 数百ページの一覧をスクロールしても、画面の切り替えにすぐ届くように固定する */
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -130,7 +134,7 @@ svg {
 
 .toolbar {
   position: sticky;
-  top: 0;
+  top: var(--header-h, 0px);
   z-index: 5;
   display: flex;
   flex-wrap: wrap;
@@ -334,12 +338,22 @@ svg {
 }
 
 .page-grid {
+  --thumb-scale: 1;
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(calc(176px * var(--thumb-scale)), 1fr));
+  gap: calc(16px * var(--thumb-scale));
+}
+
+/* 小さい表示: 数百ページを見渡すとき */
+.page-grid[data-size='small'] {
+  --thumb-scale: 0.62;
+}
+
+.page-grid[data-size='small'] .card-src {
+  display: none;
 }
 
 .page-card {
@@ -388,8 +402,8 @@ svg {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 176px;
-  padding: 12px;
+  height: calc(176px * var(--thumb-scale));
+  padding: calc(12px * var(--thumb-scale));
   overflow: hidden;
 }
 
@@ -400,8 +414,8 @@ svg {
 }
 
 .thumb canvas[data-state='waiting'] {
-  width: 106px;
-  height: 150px;
+  width: calc(106px * var(--thumb-scale)) !important;
+  height: calc(150px * var(--thumb-scale)) !important;
   background: var(--surface-2);
 }
 
@@ -648,6 +662,10 @@ svg {
 }
 
 @media (max-width: 720px) {
+  .app-header {
+    position: static;
+  }
+
   .app-header,
   .toolbar,
   .files,
@@ -1002,7 +1020,7 @@ svg {
 
 .check-preview {
   position: sticky;
-  top: 16px;
+  top: calc(var(--header-h, 0px) + 16px);
   display: grid;
   gap: 10px;
   padding: 14px;
@@ -1581,10 +1599,10 @@ svg {
 
 .editor-side {
   position: sticky;
-  top: 16px;
+  top: calc(var(--header-h, 0px) + 16px);
   display: grid;
   gap: 12px;
-  max-height: calc(100vh - 140px);
+  max-height: calc(100vh - var(--header-h, 0px) - 32px);
   min-height: 0;
 }
 
@@ -1884,4 +1902,128 @@ svg {
 
 #preview-canvas.has-marks {
   cursor: pointer;
+}
+
+/* ---------- 一覧の表示(ページへ移動・大きさ) ---------- */
+
+html {
+  /* 固定したヘッダーとツールバーの下に、移動先が隠れないようにする */
+  scroll-padding-top: calc(var(--header-h, 0px) + var(--toolbar-h, 0px) + 12px);
+}
+
+.view-bar {
+  display: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 20px 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+body.has-pages .view-bar {
+  display: flex;
+}
+
+.view-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.view-jump .input-num {
+  width: 5.5em;
+  height: 28px;
+}
+
+.view-size {
+  display: inline-flex;
+  padding: 2px;
+  background: var(--surface-2);
+  border-radius: 8px;
+}
+
+.view-size input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.view-size span {
+  display: inline-block;
+  padding: 3px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.view-size input:checked + span {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: var(--shadow);
+}
+
+.view-size input:focus-visible + span {
+  outline: 2px solid var(--accent);
+}
+
+.view-hint {
+  margin: 0;
+  flex: 1 1 20em;
+  font-size: 12px;
+}
+
+/* カードの「ページの中で開く」ボタン(ダブルクリックと同じ) */
+.card-open {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+
+.card-open svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.page-card:hover .card-open,
+.page-card.is-selected .card-open,
+.card-open:focus-visible {
+  display: inline-flex;
+}
+
+.card-open:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* 移動したページを一瞬強調する */
+.page-card.is-located {
+  animation: located 1.2s ease-out;
+}
+
+@keyframes located {
+  0%,
+  40% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  100% {
+    box-shadow: var(--shadow);
+  }
 }

@@ -58,8 +58,9 @@ export async function renderThumbnail(
   const viewport = page.getViewport({ scale });
   canvas.width = Math.round(viewport.width);
   canvas.height = Math.round(viewport.height);
-  canvas.style.width = `${Math.round(viewport.width / ratio)}px`;
-  canvas.style.height = `${Math.round(viewport.height / ratio)}px`;
+  // 一覧の表示の大きさ(--thumb-scale)に合わせて縮められるように、CSS の計算式で大きさを指定する
+  canvas.style.width = `calc(${Math.round(viewport.width / ratio)}px * var(--thumb-scale, 1))`;
+  canvas.style.height = `calc(${Math.round(viewport.height / ratio)}px * var(--thumb-scale, 1))`;
   await page.render({ canvas, viewport }).promise;
   page.cleanup();
 }

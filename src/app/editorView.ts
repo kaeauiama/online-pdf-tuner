@@ -68,8 +68,10 @@ const ORDER_BUTTONS: { move: OrderMove; label: string; key: string }[] = [
 ];
 
 export interface EditorView {
-  /** タブを開いたとき */
-  show(): void;
+  /** タブを開いたとき。page を渡すと、編集画面の並びでその位置のページを開く */
+  show(page?: number): void;
+  /** いま開いているページ(編集画面の並びでの位置) */
+  currentPage(): number | undefined;
   /** 適用していない変更があるか */
   hasUnapplied(): boolean;
   /** タブを離れてよいか(必要なら利用者に「適用 / 破棄 / 残る」を選んでもらう) */
@@ -988,12 +990,18 @@ export function setupEditorView(store: Store, ui: Ui): EditorView {
   }
 
   return {
-    show() {
+    show(page) {
       refreshPageOptions();
-      if (!session || pendingReload) void reloadCurrent();
+      if (page !== undefined && page >= 0 && page < store.pages.length && (!session || page !== pageIndexInList || pendingReload)) {
+        pendingReload = false;
+        pageIndexInList = page;
+        pageSelect.value = String(page);
+        void openPage(page);
+      } else if (!session || pendingReload) void reloadCurrent();
       else void renderPreview();
       renderAll();
     },
+    currentPage: () => (session ? pageIndexInList : undefined),
     hasUnapplied,
     confirmLeave,
     discard,

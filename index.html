@@ -21,9 +21,9 @@
         <span class="brand-tag">仮称</span>
       </div>
       <nav class="mode-tabs" role="tablist" aria-label="画面の切り替え">
-        <button type="button" role="tab" class="mode-tab" data-mode-tab="edit" aria-controls="edit-view">ページの編集</button>
-        <button type="button" role="tab" class="mode-tab" data-mode-tab="editor" aria-controls="editor-view">ページの中</button>
-        <button type="button" role="tab" class="mode-tab" data-mode-tab="check" aria-controls="check-view">入稿チェック</button>
+        <button type="button" role="tab" class="mode-tab" data-mode-tab="edit" aria-controls="edit-view" title="ページの編集 (Alt+1)" aria-keyshortcuts="Alt+1">ページの編集</button>
+        <button type="button" role="tab" class="mode-tab" data-mode-tab="editor" aria-controls="editor-view" title="ページの中 (Alt+2)" aria-keyshortcuts="Alt+2">ページの中</button>
+        <button type="button" role="tab" class="mode-tab" data-mode-tab="check" aria-controls="check-view" title="入稿チェック (Alt+3)" aria-keyshortcuts="Alt+3">入稿チェック</button>
       </nav>
       <button type="button" class="btn install-button" id="install-app" hidden title="インストールすると、オフラインでも使え、PDF を「プログラムから開く」で開けます">
         アプリとして使う
@@ -99,6 +99,19 @@
       </section>
 
       <section class="files" id="files" aria-label="読み込んだファイル"></section>
+
+      <section class="view-bar" id="view-bar" aria-label="一覧の表示">
+        <label class="view-jump">
+          <span>ページへ移動</span>
+          <input type="number" class="input-num" id="page-jump" min="1" inputmode="numeric" aria-label="移動するページの番号" />
+          <span class="view-total" id="page-total"></span>
+        </label>
+        <div class="view-size" role="radiogroup" aria-label="サムネイルの大きさ">
+          <label><input type="radio" name="thumb-size" value="normal" checked /><span>標準</span></label>
+          <label><input type="radio" name="thumb-size" value="small" /><span>小</span></label>
+        </div>
+        <p class="view-hint">ページをダブルクリック(または選んで Enter)すると、「ページの中」で開きます。Alt+1〜3 で画面を切り替えられます。</p>
+      </section>
 
       <section class="workspace" id="workspace">
         <div class="dropzone" id="dropzone">
