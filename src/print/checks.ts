@@ -282,7 +282,14 @@ export function runChecks(pages: readonly PageFacts[], options: CheckOptions): P
   const rgb =pages.flatMap((p, i) => (p.structure.colorUse.rgb > 0 ? [i] : []));
   if (rgb.length > 0) add('PRINT_RGB_CONTENT', 'info', rgb, `${pageList(rgb)} ページ目`);
   const transparent = pages.flatMap((p, i) => (p.structure.transparency ? [i] : []));
-  if (transparent.length > 0) add('PRINT_TRANSPARENCY', 'info', transparent, `${pageList(transparent)} ページ目`);
+  if (transparent.length > 0) {
+    const invisible = transparent.filter((i) => pages[i].structure.fullyTransparent);
+    const note =
+      invisible.length > 0
+        ? `。そのうち ${pageList(invisible)} ページ目には、完全に透明な文字や図形があります(PowerPoint などが、画像にした文字の上に、検索用の見えない文字を重ねていることがあります。透明に対応していない印刷機では、これが濃く印刷されて文字が二重に見えることがあります)`
+        : '';
+    add('PRINT_TRANSPARENCY', 'info', transparent, `${pageList(transparent)} ページ目${note}`);
+  }
 
   findings.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
   return { layouts, findings, fonts: [...fontNames].sort() };

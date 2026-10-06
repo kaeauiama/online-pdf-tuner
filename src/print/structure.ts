@@ -53,6 +53,8 @@ export interface PageStructure {
   readonly images: readonly ImagePlacement[];
   readonly colorUse: Readonly<Record<ColorFamily, number>>;
   readonly transparency: boolean;
+  /** 不透明度 0(完全に透明)の指定が使われている。Office が検索用の「見えない文字」に使うことがある */
+  readonly fullyTransparent: boolean;
 }
 
 const N = (s: string) => PDFName.of(s);
@@ -199,6 +201,7 @@ interface ScanState {
   readonly colorUse: Record<ColorFamily, number>;
   readonly fonts: Map<string, FontInfo>;
   transparency: boolean;
+  fullyTransparent: boolean;
   readonly visitedForms: Set<string>;
 }
 
@@ -266,6 +269,7 @@ function scanContent(state: ScanState, bytes: Uint8Array, resources: PDFDict | u
       case 'gs': {
         const gs = dictOf(doc, dictOf(doc, resources?.get(N('ExtGState')))?.get(N(opName(o[0]) ?? '')));
         if (gs && extGStateHasTransparency(doc, gs)) state.transparency = true;
+        if (gs && (numberOf(doc, gs.get(N('ca'))) === 0 || numberOf(doc, gs.get(N('CA'))) === 0)) state.fullyTransparent = true;
         break;
       }
       case 'Do':
@@ -383,6 +387,7 @@ export function scanPage(doc: PDFDocument, page: PDFPage, index: number): PageSt
     colorUse: { rgb: 0, cmyk: 0, gray: 0, spot: 0, other: 0 },
     fonts: new Map(),
     transparency: false,
+    fullyTransparent: false,
     visitedForms: new Set(),
   };
   const resources = dictOf(doc, page.node.Resources());
@@ -404,6 +409,7 @@ export function scanPage(doc: PDFDocument, page: PDFPage, index: number): PageSt
     images: state.images,
     colorUse: state.colorUse,
     transparency: state.transparency,
+    fullyTransparent: state.fullyTransparent,
   };
 }
 

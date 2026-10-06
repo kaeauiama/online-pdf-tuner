@@ -7,6 +7,7 @@ import { parsePageRanges } from '../core/ranges.ts';
 import { analyzeForPrint, type PrintAnalysis } from '../print/analyze.ts';
 import type { Binding, CheckOptions, Finding, Mark, Severity } from '../print/checks.ts';
 import { blankPagesForSaddle, buildPrintReady, type BleedMethod, type FixResult, type RegionFit } from '../print/fix.ts';
+import { flattenPdf } from '../print/flattenRender.ts';
 import { highlightOutOfGamut, simulatePrint } from '../print/gamut.ts';
 import { ptToMm, rectHeight, rectWidth, type Rect } from '../print/geometry.ts';
 import type { PageLayout } from '../print/layout.ts';
@@ -195,10 +196,37 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
     }
     const contentBounds = new Map<number, Rect>();
     source.facts.forEach((f, i) => f.contentBounds && contentBounds.set(i, f.contentBounds));
+    const flatten = data.get('flatten') === 'on';
+    const flattenAll = data.get('flattenPages') === 'all';
+    const flattenDpi = Number(data.get('flattenDpi') ?? 350);
 
     await ui.run('入稿用 PDF を作っています…', async (progress) => {
-      const doc = await loadPdfForEditOrThrow(source.bytes);
-      const result = await buildPrintReady(doc, source.report.layouts, {
+      // 効果の焼き込みは、塗り足しを作る前に行う(元の大きさのページで描画する)
+      let input = source.bytes;
+      const flattenNotes = new Map<number, string>();
+      if (flatten) {
+        const pages = new Set(source.facts.flatMap((f, i) => (flattenAll || f.structure.transparency ? [i] : [])));
+        if (pages.size > 0) {
+          const flattened = await flattenPdf(input, pages, flattenDpi, progress);
+          input = flattened.bytes;
+          const lowDpiPages = new Set(
+            source.report.findings
+              .filter((f) => f.code === 'PRINT_IMAGE_LOW_DPI' || f.code === 'PRINT_IMAGE_BELOW_RECOMMENDED')
+              .flatMap((f) => f.pages),
+          );
+          for (const p of flattened.pages) {
+            const parts = [`効果を焼き込みました(文字以外を ${p.dpi}ppi の画像にし、文字は文字のまま上に重ねました)。`];
+            if (p.invisibleText > 0) parts.push(`検索用の見えない文字 ${p.invisibleText} か所は、透明を使わない形に置き換えました。`);
+            if (p.rasterizedText > 0) parts.push(`半透明などの効果が付いた文字 ${p.rasterizedText} か所は、効果ごと画像にしました。`);
+            if (p.textInForms) parts.push('グループ化された部分の文字は画像になっています。');
+            if (lowDpiPages.has(p.page)) parts.push('元の写真などの細かさ(解像度)は変わりません。解像度の指摘は、元の PDF の結果を参考にしてください。');
+            flattenNotes.set(p.page, parts.join(''));
+          }
+        }
+      }
+      progress('入稿用 PDF を作っています…');
+      const doc = await loadPdfForEditOrThrow(input);
+      const built = await buildPrintReady(doc, source.report.layouts, {
         bleedMm: options.profile.bleedMm,
         marks,
         method,
@@ -206,6 +234,10 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
         regionFit,
         contentBounds,
       });
+      const result: FixResult = {
+        ...built,
+        pages: built.pages.map((p) => (flattenNotes.has(p.page) ? { ...p, notes: [flattenNotes.get(p.page)!, ...p.notes] } : p)),
+      };
       progress('入稿用 PDF を確認しています…');
       // TrimBox を書き込んだので、仕上がりサイズは自動判定で正しく読める
       const analysis = await analyzeForPrint(result.bytes, { ...options, paper: 'auto' }, progress);
@@ -302,6 +334,39 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
       f.addEventListener('change', syncFit);
       syncFit();
     }
+
+    // 効果の焼き込み(透明効果などが印刷所で正しく出ない場合の対策)
+    const transparentPages = analysis.facts.filter((x) => x.structure.transparency).length;
+    const flattenSet = el('fieldset', 'fix-fieldset');
+    flattenSet.id = 'flatten-fieldset';
+    const flattenLine = el('label', 'fix-option');
+    const flattenCheck = el('input');
+    flattenCheck.type = 'checkbox';
+    flattenCheck.name = 'flatten';
+    const flattenText = el('span', 'fix-option-text');
+    flattenText.append(
+      el('span', 'fix-option-label', '透明効果などを焼き込む'),
+      el(
+        'span',
+        'fix-option-hint',
+        transparentPages > 0
+          ? `透明効果のあるページが ${transparentPages} ページあります。印刷所で半透明・影・ぼかしなどが正しく出ないことがある場合に。文字以外を画像にし、文字は文字のまま残します。`
+          : '透明効果は見つかりませんでした。必要なら「すべてのページ」を選んで焼き込めます。',
+      ),
+    );
+    flattenLine.append(flattenCheck, flattenText);
+    const flattenSub = el('div', 'fix-sub');
+    flattenSub.append(
+      radio('flattenPages', 'transparent', '透明効果のあるページだけ', '', transparentPages > 0),
+      radio('flattenPages', 'all', 'すべてのページ', '', transparentPages === 0),
+      radio('flattenDpi', '350', '350ppi(標準)', '多くの印刷所の推奨値です。', true),
+      radio('flattenDpi', '600', '600ppi', '細い線や小さな文字を含む画像があるときに。ファイルが大きくなります。', false),
+    );
+    flattenSet.append(el('legend', '', '効果の焼き込み'), flattenLine, flattenSub);
+    f.append(flattenSet);
+    const syncFlatten = () => (flattenSub.hidden = !flattenCheck.checked);
+    flattenCheck.addEventListener('change', syncFlatten);
+    syncFlatten();
 
     const submit = el('button', 'btn btn-primary btn-block', '入稿用 PDF を作って確認する');
     submit.type = 'submit';
@@ -444,6 +509,17 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
         const panel = document.querySelector<HTMLElement>('#fix-panel');
         panel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         panel?.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true });
+      });
+      return b;
+    }
+    if (f.code === 'PRINT_TRANSPARENCY') {
+      const b = el('button', 'btn finding-action', '焼き込む(下の「入稿用 PDF を作る」へ)');
+      b.type = 'button';
+      b.addEventListener('click', () => {
+        const set = document.querySelector<HTMLElement>('#flatten-fieldset');
+        const check = set?.querySelector<HTMLInputElement>('input[name="flatten"]');
+        if (check && !check.checked) check.click();
+        set?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       });
       return b;
     }

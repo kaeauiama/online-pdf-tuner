@@ -17,6 +17,7 @@ function page(wMm: number, hMm: number, extra: Partial<PageStructure> = {}): Pag
     images: [],
     colorUse: { rgb: 0, cmyk: 0, gray: 0, spot: 0, other: 0 },
     transparency: false,
+    fullyTransparent: false,
     ...extra,
   };
 }

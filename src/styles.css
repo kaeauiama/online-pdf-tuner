@@ -1400,3 +1400,10 @@ svg {
   box-shadow: var(--shadow-lg);
   font-size: 14px;
 }
+
+.busy-hint {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-2);
+}

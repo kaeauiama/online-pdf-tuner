@@ -18,6 +18,7 @@ function structure(wMm: number, hMm: number, extra: Partial<PageStructure> = {})
     images: [],
     colorUse: { rgb: 0, cmyk: 0, gray: 0, spot: 0, other: 0 },
     transparency: false,
+    fullyTransparent: false,
     ...extra,
   };
 }
@@ -216,5 +217,14 @@ describe('runChecks: フォント・画像・その他', () => {
     });
     const report = runChecks([{ structure: s, edges: edges({ top: 50 }) }], opts());
     expect(report.findings.map((f) => f.severity)).toEqual(['error', 'warn', 'info']);
+  });
+});
+
+describe('runChecks: 完全に透明な文字や図形', () => {
+  it('透明効果の詳細で、見えない文字が二重に印刷されるおそれを説明する', () => {
+    const s = structure(154, 216, { transparency: true, fullyTransparent: true });
+    const f = runChecks([{ structure: s }], opts()).findings.find((x) => x.code === 'PRINT_TRANSPARENCY')!;
+    expect(f.detail).toContain('完全に透明な文字や図形');
+    expect(f.detail).toContain('二重');
   });
 });
