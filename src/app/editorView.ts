@@ -1,5 +1,5 @@
-// 「ページの中」タブ(M6): ページ内の要素をレイヤーとして一覧し、移動・拡大縮小・削除・重なり順の変更・文字の書き換えをする。
-// 変更はタブの中の作業用のコピーに対して行い、「適用」で編集画面の並び(元のファイルの新しい版)に反映する。
+// 「編集」タブ(ページの中の編集、M6): ページ内の要素をレイヤーとして一覧し、移動・拡大縮小・削除・重なり順の変更・文字の書き換えをする。
+// 変更はタブの中の作業用のコピーに対して行い、「適用」で一覧の並び(元のファイルの新しい版)に反映する。
 import { PDFDocument, PDFName } from '@cantoo/pdf-lib';
 import type { PageViewport, PDFDocumentProxy } from 'pdfjs-dist';
 import { normalizeRotation, type PageRef } from '../core/pageList.ts';
@@ -68,9 +68,9 @@ const ORDER_BUTTONS: { move: OrderMove; label: string; key: string }[] = [
 ];
 
 export interface EditorView {
-  /** タブを開いたとき。page を渡すと、編集画面の並びでその位置のページを開く */
+  /** タブを開いたとき。page を渡すと、一覧の並びでその位置のページを開く */
   show(page?: number): void;
-  /** いま開いているページ(編集画面の並びでの位置) */
+  /** いま開いているページ(一覧の並びでの位置) */
   currentPage(): number | undefined;
   /** 適用していない変更があるか */
   hasUnapplied(): boolean;
@@ -967,7 +967,7 @@ export function setupEditorView(store: Store, ui: Ui): EditorView {
       future = [];
       textDrafts.clear();
       store.replaceSources(new Map([[s.ref.sourceId, await doc.save({ useObjectStreams: true })]]));
-      ui.toast(`${count} 個の要素の変更を、ページに反映しました。編集画面の「元に戻す」で取り消せます。`);
+      ui.toast(`${count} 個の要素の変更を、ページに反映しました。一覧の「元に戻す」で取り消せます。`);
     });
     // replaceSources で並びが変わる → store の通知で、同じ位置のページを開き直す
   }
@@ -981,7 +981,7 @@ export function setupEditorView(store: Store, ui: Ui): EditorView {
     void renderPreview();
   }
 
-  // 編集画面でページが変わったら、ページの一覧を更新し、開いているページを開き直す
+  // 一覧でページが変わったら、ページの選択肢を更新し、開いているページを開き直す
   let pendingReload = false;
   store.subscribe(() => {
     refreshPageOptions();

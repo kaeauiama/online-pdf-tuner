@@ -113,8 +113,8 @@ export function startApp(): void {
 
     const open = el('button', 'card-open');
     open.type = 'button';
-    open.title = '「ページの中」で開く(ダブルクリックでも開けます)';
-    open.setAttribute('aria-label', '「ページの中」で開く');
+    open.title = '「編集」で開く(ダブルクリックでも開けます)';
+    open.setAttribute('aria-label', '「編集」で開く');
     open.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 13 9 5 9-5"/></svg>';
 
     const meta = el('div', 'card-meta');
@@ -162,12 +162,12 @@ export function startApp(): void {
 
   // ---------- 画面の切り替え ----------
 
-  /** 画面を切り替える。page: 「ページの中」で開くページ(編集画面の並びでの位置) */
+  /** 画面を切り替える。page: 「編集」で開くページ(一覧の並びでの位置) */
   async function setMode(mode: Mode, page?: number): Promise<void> {
     const current = document.body.dataset.mode as Mode | undefined;
-    // 「ページの中」で適用していない変更があれば、離れる前に「適用 / 破棄 / 残る」を選んでもらう
+    // 「編集」で適用していない変更があれば、離れる前に「適用 / 破棄 / 残る」を選んでもらう
     if (current === 'editor' && mode !== 'editor' && !(await editor.confirmLeave())) return;
-    // 「ページの中」から編集画面に戻ったら、開いていたページを選んで見せる
+    // 「編集」から一覧に戻ったら、開いていたページを選んで見せる
     const editedPage = current === 'editor' && mode === 'edit' ? editor.currentPage() : undefined;
     document.body.dataset.mode = mode;
     for (const tab of document.querySelectorAll<HTMLButtonElement>('[data-mode-tab]')) {
@@ -408,20 +408,11 @@ export function startApp(): void {
     }
   });
 
-  // カードのダブルクリック: そのページを「ページの中」で開く
+  // カードのダブルクリック: そのページを「編集」で開く
   grid.addEventListener('dblclick', (e) => {
     const card = (e.target as Element).closest<HTMLLIElement>('.page-card');
     if (!card || (e.target as Element).closest('.card-check, .card-open')) return;
     openInEditor(card.dataset.key!);
-  });
-
-  // Alt+1〜3: 画面の切り替え(どの画面からでも)
-  document.addEventListener('keydown', (e) => {
-    if (!e.altKey || e.ctrlKey || e.metaKey || document.querySelector('dialog[open]')) return;
-    const mode = ({ '1': 'edit', '2': 'editor', '3': 'check' } as const)[e.key as '1' | '2' | '3'];
-    if (!mode) return;
-    e.preventDefault();
-    void setMode(mode);
   });
 
   document.addEventListener('keydown', (e) => {
@@ -445,7 +436,7 @@ export function startApp(): void {
     } else if (e.key === 'Escape' && store.selection.size > 0) {
       actions['select-none']();
     } else if (e.key === 'Enter' && !mod && store.selection.size === 1 && !target.closest('button, a, input')) {
-      // 1 ページだけ選んでいるとき: そのページを「ページの中」で開く
+      // 1 ページだけ選んでいるとき: そのページを「編集」で開く
       e.preventDefault();
       openInEditor([...store.selection][0]);
     }

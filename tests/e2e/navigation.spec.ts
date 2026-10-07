@@ -1,4 +1,4 @@
-// 大きな PDF での移動: ヘッダーの固定、ダブルクリックで「ページの中」、ページへ移動、サムネイルの大きさ、Alt+1〜3
+// 大きな PDF での移動: ヘッダーの固定、ダブルクリックで「編集」、ページへ移動、サムネイルの大きさ
 import { expect, test } from '@playwright/test';
 import { addPdfs, makePdf } from './fixtures.ts';
 
@@ -14,13 +14,13 @@ test('ヘッダーは固定され、下までスクロールしても画面を�
   // ツールバーはヘッダーのすぐ下に付いてくる
   const toolbar = await page.locator('#edit-view .toolbar').boundingBox();
   expect(toolbar!.y).toBeCloseTo(header!.height, 0);
-  await page.keyboard.press('Alt+3');
+  await page.click('[data-mode-tab="check"]');
   await expect(page.locator('#check-view')).toBeVisible();
-  await page.keyboard.press('Alt+1');
+  await page.click('[data-mode-tab="edit"]');
   await expect(page.locator('#edit-view')).toBeVisible();
 });
 
-test('ページをダブルクリック(またはボタン・Enter)で「ページの中」を開き、戻るとそのページを示す', async ({ page }) => {
+test('ページをダブルクリック(またはボタン・Enter)で「編集」を開き、戻るとそのページを示す', async ({ page }) => {
   await page.goto('/');
   await addPdfs(page, [{ name: 'many.pdf', buffer: await makePdf('P', MANY) }]);
   await page.locator('.page-card').nth(11).dblclick();

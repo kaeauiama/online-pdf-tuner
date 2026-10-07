@@ -670,16 +670,67 @@ svg {
 }
 
 @media (max-width: 720px) {
+  /* スマホ: ヘッダーは 2 段(ロゴと鍵 / 画面の切り替え)。ツールバーは固定せず、ボタンは画面の中で折り返す */
   .app-header {
     position: static;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 12px 10px;
   }
 
-  .app-header,
-  .toolbar,
+  .brand {
+    flex: 1;
+  }
+
+  .privacy-badge {
+    order: 2;
+    padding: 6px 10px;
+  }
+
+  .privacy-text,
+  .install-button {
+    display: none;
+  }
+
+  /* .mode-tabs の基本の指定より後に書かれていないため、詳しい指定で上書きする */
+  .app-header .mode-tabs {
+    order: 3;
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .app-header .mode-tab {
+    justify-content: center;
+    padding: 7px 4px;
+    white-space: nowrap;
+  }
+
+  .toolbar {
+    position: static;
+    padding: 8px 12px;
+  }
+
+  .tool-group {
+    flex-wrap: wrap;
+  }
+
+  .tool-group[aria-label='保存'] {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tool-group[aria-label='保存'] .btn,
+  .tool-group[aria-label='書き込み'] .btn {
+    justify-content: center;
+  }
+
   .files,
+  .view-bar,
   .workspace {
-    padding-left: 16px;
-    padding-right: 16px;
+    padding-left: 12px;
+    padding-right: 12px;
   }
 
   .tool-spacer {
@@ -689,6 +740,23 @@ svg {
   .page-grid {
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   }
+
+  .view-hint {
+    flex-basis: 100%;
+  }
+
+  .editor-toolbar {
+    position: static;
+  }
+
+  .editor-stage {
+    padding: 12px;
+  }
+}
+
+/* ボタンが親の幅より広くならないようにする(長い名前でも画面の外に出さない) */
+.btn {
+  max-width: 100%;
 }
 
 /* ---------- 画面の切り替え ---------- */
@@ -716,14 +784,6 @@ svg {
   cursor: pointer;
 }
 
-.mode-tab::after {
-  content: attr(data-key);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 400;
-  color: var(--text-3);
-}
-
 .mode-tab:hover {
   color: var(--text);
 }
@@ -734,9 +794,6 @@ svg {
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 
-.mode-tab[aria-selected='true']::after {
-  color: var(--accent);
-}
 
 .mode-tab:focus-visible {
   outline: 2px solid var(--accent);
@@ -1544,7 +1601,7 @@ svg {
   border-radius: 8px;
 }
 
-/* ---------- ページの中(M6) ---------- */
+/* ---------- 編集(ページの中、M6) ---------- */
 
 .editor-view {
   display: grid;
@@ -2035,7 +2092,7 @@ body.has-pages .view-bar {
   font-size: 12px;
 }
 
-/* カードの「ページの中で開く」ボタン(ダブルクリックと同じ) */
+/* カードの「編集で開く」ボタン(ダブルクリックと同じ) */
 .card-open {
   position: absolute;
   top: 6px;

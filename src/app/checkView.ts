@@ -278,7 +278,7 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
     });
   }
 
-  // 編集画面でページが変わったら、結果が古くなったことを示す
+  // 一覧でページが変わったら、結果が古くなったことを示す
   store.subscribe(() => {
     if (original && !stale) {
       stale = true;
@@ -634,7 +634,7 @@ export function setupCheckView(store: Store, ui: Ui, goToEdit: () => void): void
     if (store.pages.length === 0 && !analysis) {
       const empty = el('div', 'check-empty');
       empty.append(el('p', '', 'まだページがありません。'));
-      const go = el('button', 'btn', '「ページの編集」で PDF を追加する');
+      const go = el('button', 'btn', '「一覧」で PDF を追加する');
       go.type = 'button';
       go.addEventListener('click', goToEdit);
       empty.append(go);
